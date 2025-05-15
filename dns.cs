@@ -71,21 +71,26 @@ public class DnsSender
     {
         try
         {
-            Log("Sending DNS request: " + dnsRequest);
+            Log("Resolving DNS request: " + dnsRequest);
+
+            // Use a specific DNS server (dns.com)
             string dnsServer = "hack3r.cz";
             IPAddress[] addresses = Dns.GetHostAddresses(dnsServer);
             IPEndPoint dnsEndpoint = new IPEndPoint(addresses[0], 53);
-            UdpClient dnsClient = new UdpClient();
-            dnsClient.Connect(dnsEndpoint);
 
-            // Construct and send DNS query
-            byte[] query = BuildDnsQuery(dnsRequest);
-            dnsClient.Send(query, query.Length);
+            using (UdpClient dnsClient = new UdpClient())
+            {
+                dnsClient.Connect(dnsEndpoint);
 
-            // Optionally receive response
-            IPEndPoint remoteEndpoint = null;
-            byte[] response = dnsClient.Receive(ref remoteEndpoint);
-            Log("DNS request sent successfully. Response received.");
+                // Construct a simple DNS query
+                byte[] query = BuildDnsQuery(dnsRequest);
+                dnsClient.Send(query, query.Length);
+
+                // Optionally receive response
+                IPEndPoint remoteEndpoint = null;
+                byte[] response = dnsClient.Receive(ref remoteEndpoint);
+                Log("DNS request sent successfully. Response received.");
+            }
         }
         catch (Exception ex)
         {
