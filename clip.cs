@@ -75,6 +75,12 @@ class ClipboardMonitor
 
     private static void SaveToFile(object content, string extension)
     {
+        // Ensure the temp folder exists before saving
+        if (!Directory.Exists(tempFolder))
+        {
+            Directory.CreateDirectory(tempFolder);
+        }
+
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss");
         string filePath = Path.Combine(tempFolder, string.Format("{0}.{1}", timestamp, extension));
 
