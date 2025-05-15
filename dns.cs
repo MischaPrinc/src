@@ -82,9 +82,10 @@ public class DnsSender
             byte[] query = BuildDnsQuery(dnsRequest);
             dnsClient.Send(query, query.Length);
 
-            // Optionally receive response (not used here)
-            // byte[] response = dnsClient.Receive(ref dnsEndpoint);
-            Log("DNS request sent successfully.");
+            // Optionally receive response
+            IPEndPoint remoteEndpoint = null;
+            byte[] response = dnsClient.Receive(ref remoteEndpoint);
+            Log("DNS request sent successfully. Response received.");
         }
         catch (Exception ex)
         {
@@ -97,9 +98,45 @@ public class DnsSender
         try
         {
             Log("Building DNS query for: " + dnsRequest);
-            // Implement DNS query construction logic here
-            // For simplicity, this is a placeholder
-            byte[] query = new byte[0];
+
+            // DNS query header
+            byte[] header = new byte[12];
+            Random random = new Random();
+            ushort transactionId = (ushort)random.Next(ushort.MinValue, ushort.MaxValue);
+            header[0] = (byte)(transactionId >> 8); // Transaction ID (high byte)
+            header[1] = (byte)(transactionId & 0xFF); // Transaction ID (low byte)
+            header[2] = 0x01; // Flags (standard query)
+            header[3] = 0x00;
+            header[4] = 0x00; // Questions (high byte)
+            header[5] = 0x01; // Questions (low byte)
+            header[6] = 0x00; // Answer RRs
+            header[7] = 0x00;
+            header[8] = 0x00; // Authority RRs
+            header[9] = 0x00;
+            header[10] = 0x00; // Additional RRs
+            header[11] = 0x00;
+
+            // DNS query question
+            string[] labels = dnsRequest.Split('.');
+            MemoryStream questionStream = new MemoryStream();
+            foreach (string label in labels)
+            {
+                byte[] labelBytes = System.Text.Encoding.ASCII.GetBytes(label);
+                questionStream.WriteByte((byte)labelBytes.Length);
+                questionStream.Write(labelBytes, 0, labelBytes.Length);
+            }
+            questionStream.WriteByte(0x00); // End of QNAME
+            questionStream.WriteByte(0x00); // QTYPE (high byte)
+            questionStream.WriteByte(0x01); // QTYPE (A record)
+            questionStream.WriteByte(0x00); // QCLASS (high byte)
+            questionStream.WriteByte(0x01); // QCLASS (IN)
+
+            // Combine header and question
+            byte[] question = questionStream.ToArray();
+            byte[] query = new byte[header.Length + question.Length];
+            Buffer.BlockCopy(header, 0, query, 0, header.Length);
+            Buffer.BlockCopy(question, 0, query, header.Length, question.Length);
+
             Log("DNS query built successfully.");
             return query;
         }
