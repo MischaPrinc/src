@@ -1,3 +1,4 @@
+//  For educational purposes only
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
