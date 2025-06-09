@@ -50,7 +50,7 @@ Write-Host "==========================================================" -Foregro
 
 $choice = Read-Host "Vase volba :"
 
-if (-not ($choice -match '^\d+$') -or $choice -lt 1 -or $choice -gt 10 -and $choice -ne 99) {
+if (-not ($choice -match '^\d+$')) {
     Write-Host "Neplatna volba. Skript bude ukoncen." -ForegroundColor Red
     exit
 }
