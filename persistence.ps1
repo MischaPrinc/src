@@ -4,10 +4,6 @@
 # Ensure you run this script with administrative privileges.
 # Disclaimer: Unauthorized use of this script may violate laws and regulations. Always obtain permission before testing on any system.
 # Check if running as administrator
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "Tento skript musi byt spusten s administrativnimi pravomocemi." -ForegroundColor Red
-    exit
-}
 
 function Show-Menu {
     Clear-Host
@@ -22,15 +18,15 @@ function Show-Menu {
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "Vyberte techniku perzistence, kterou chcete otestovat:" -ForegroundColor Yellow
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "1) Sluzba (Service)"
+    Write-Host "1) Sluzba (Service) (as admin)"
     Write-Host "2) Startup (vlastni profil)"
-    Write-Host "3) Startup (vsichni uzivatele)"
+    Write-Host "3) Startup (vsichni uzivatele) (as admin)"
     Write-Host "4) Run klic v HKCU (HKEY_CURRENT_USER)"
-    Write-Host "5) Run klic v HKLM (HKEY_LOCAL_MACHINE)"
-    Write-Host "6) Run klic pro 32bitove aplikace v HKLM (HKEY_LOCAL_MACHINE WOW6432Node)"
+    Write-Host "5) Run klic v HKLM (HKEY_LOCAL_MACHINE) (as admin)"
+    Write-Host "6) Run klic pro 32bitove aplikace v HKLM (HKEY_LOCAL_MACHINE WOW6432Node) (as admin)"
     Write-Host "7) Planovana uloha (Scheduled Task)"
-    Write-Host "8) Debugger (Image File Execution Options)"
-    Write-Host "9) WMI Filtr (WMI Filter)"
+    Write-Host "8) Debugger (Image File Execution Options) (as admin)"
+    Write-Host "9) WMI Filtr (WMI Filter) (as admin)"
     Write-Host "10) XLA do XLStart (Excel Add-in)"
     Write-Host "99) Odstranit vsechny persistence techniky"
     Write-Host "==========================================================" -ForegroundColor Cyan
@@ -57,7 +53,7 @@ if ($confirmation -ne "Ano" -and $confirmation -ne "ano") {
 
 do {
     Show-Menu
-    $choice = Read-Host "Vase volba:"
+    $choice = Read-Host "Vase volba"
 
     if (-not ($choice -match '^\d+$')) {
         Write-Host "Neplatna volba. Zkuste to znovu." -ForegroundColor Red
