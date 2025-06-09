@@ -48,7 +48,7 @@ Write-Host "Zadejte cislo moznosti (1-10 nebo 99 pro odstraneni)" -ForegroundCol
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-$choice = Read-Host "Vase volba:"
+$choice = Read-Host "Vase volba :"
 
 if (-not ($choice -match '^\d+$') -or $choice -lt 1 -or $choice -gt 10 -and $choice -ne 99) {
     Write-Host "Neplatna volba. Skript bude ukoncen." -ForegroundColor Red
