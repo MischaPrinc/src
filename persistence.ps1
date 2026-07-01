@@ -30,6 +30,20 @@ function Require-Administrator {
     return $true
 }
 
+# Simple action logger: zapisuje kazdou zmenu do souboru v %TEMP%\persistence_actions.log
+function Log-Action {
+    param(
+        [string]$Message
+    )
+    try {
+        $log = Join-Path $env:TEMP "persistence_actions.log"
+        $timestamp = (Get-Date).ToString('s')
+        "$timestamp`t$Message" | Out-File -FilePath $log -Append -Encoding UTF8
+    } catch {
+        Write-Host "Nepodarilo se zapsat do logu: $_" -ForegroundColor Yellow
+    }
+}
+
 function Show-Menu {
     Clear-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
@@ -105,6 +119,10 @@ do {
             $binPath = "cmd.exe /c cmd /k echo Spustena sluzba"
             sc.exe create $serviceName binPath= "$binPath" start= auto | Out-Null
             Write-Host "Sluzba 'Demo' byla vytvorena."
+            $detail = "Pridano: Windows Service '$serviceName' -> binPath: $binPath. Umisteni: HKLM\\System\\CurrentControlSet\\Services\\$serviceName."
+            Write-Host $detail -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri startu systemu (pre-Logon). Pouziti: system-level persistence pro spousteni procesu na urovni sluzby." -ForegroundColor Yellow
+            Log-Action "Created service: $serviceName; binPath=$binPath"
         }
         2 { 
             Write-Host "Startup (vlastni profil): Zkontrolujte '$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup'."
@@ -112,6 +130,9 @@ do {
             $filePath = Join-Path $startupPath "spust.cmd"
             'cmd /k echo Soubor spusten ve vlasnim profilu ve startup slozce.' | Set-Content -Path $filePath -Encoding UTF8
             Write-Host "Soubor 'spust.cmd' byl vytvoren ve vasem Startup."
+            Write-Host "Pridano: Soubor ve Startup slozce uzivatele -> $filePath" -ForegroundColor Green
+            Write-Host "Kdy se spousti: po prihlaseni daneho uzivatele. Pouziti: uzivatelska perzistence pro spousteni skriptu pri prihlaseni." -ForegroundColor Yellow
+            Log-Action "Created per-user startup file: $filePath"
         }
         3 { 
             if (-not (Require-Administrator)) { break }
@@ -120,6 +141,9 @@ do {
             $filePath = Join-Path $startupPath "spust.cmd"
             'cmd /k echo Soubor spusten ve startup slozce pro vsechny uzivatele.' | Set-Content -Path $filePath -Encoding UTF8
             Write-Host "Soubor 'spust.cmd' byl vytvoren ve Startup vsech uzivatelu."
+            Write-Host "Pridano: Soubor ve vse-uzivatelskem Startup -> $filePath" -ForegroundColor Green
+            Write-Host "Kdy se spousti: po prihlaseni kterhokoliv uzivatele. Pouziti: system-wide uzivatelska perzistence." -ForegroundColor Yellow
+            Log-Action "Created all-users startup file: $filePath"
         }
         4 { 
             Write-Host "Run klic v HKCU: Zkontrolujte 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'."
@@ -128,6 +152,9 @@ do {
             $valueData = 'cmd /k echo Me spousti startup ve slozce uzivatele a bezim pod %username% na pocitaci %computername%'
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ."
+            Write-Host "Pridano: HKCU Run -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri prihlaseni/dalsim spusteni uzivatele. Pouziti: uzivatelska perzistence via Run kluce." -ForegroundColor Yellow
+            Log-Action "Added HKCU Run entry: $valueName -> $valueData"
         }
         5 { 
             if (-not (Require-Administrator)) { break }
@@ -137,6 +164,9 @@ do {
             $valueData = 'cmd /k echo Me spousti startup ve slozce uzivatele a bezim pod %username% na pocitaci %computername%'
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ do HKLM."
+            Write-Host "Pridano: HKLM Run -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri prihlaseni libovolneho uzivatele (system-wide). Pouziti: system-level persistence via Run kluce." -ForegroundColor Yellow
+            Log-Action "Added HKLM Run entry: $valueName -> $valueData"
         }
         6 { 
             if (-not (Require-Administrator)) { break }
@@ -146,6 +176,9 @@ do {
             $valueData = '%SystemRoot%\SysWOW64\cmd.exe /k echo Me spousti startup ve slozce uzivatele a bezim pod %username% na pocitaci %computername%'
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ do HKLM WOW6432Node."
+            Write-Host "Pridano: HKLM WOW6432Node Run -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri spusteni 32bitove aplikace/pri prihlaseni. Pouziti: persistence pro 32-bitovych procesu na 64-bit systemu." -ForegroundColor Yellow
+            Log-Action "Added HKLM WOW6432Node Run entry: $valueName -> $valueData"
         }
         7 { 
             Write-Host "Vytvarim novou naplanovanou ulohu, ktera se spusti kazdych 30 minut."
@@ -154,6 +187,9 @@ do {
             $taskName = "Demo30MinTask"
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
             Write-Host "Naplanovana uloha '$taskName' byla vytvorena."
+            Write-Host "Pridano: Scheduled Task -> $taskName; Action: cmd.exe $action; Trigger: every 30 minutes" -ForegroundColor Green
+            Write-Host "Kdy se spousti: podle triggrovaneho casu (zde kazdych 30 minut). Pouziti: pravidelna/periodicka perzistence." -ForegroundColor Yellow
+            Log-Action "Registered scheduled task: $taskName; Trigger=30min"
         }
         8 { 
             if (-not (Require-Administrator)) { break }
@@ -164,6 +200,9 @@ do {
             New-Item -Path $regPath -Force | Out-Null
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType String -Force | Out-Null
             Write-Host "Do registru byl pridan klic $regPath a hodnota $valueName typu REG_SZ."
+            Write-Host "Pridano: Image File Execution Options for charmap.exe -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: kdyz je spusten cilovy exe (charmap.exe). Pouziti: persistentni prehooking/launch hijack site-specific exe." -ForegroundColor Yellow
+            Log-Action "Added IFEO Debugger for charmap.exe -> $valueData"
         }
         9 { 
             if (-not (Require-Administrator)) { break }
@@ -184,6 +223,9 @@ do {
                 Consumer = $Consumer
             } | Out-Null
             Write-Host "WMI filtr, consumer a propojeni byly vytvoreny."
+            Write-Host "Pridano: WMI EventFilter 'DetektorOdhalovaniNapadeni' a CommandLineEventConsumer 'HlidacKlicovychProcesu'" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri udalostech definovanych ve filtru (zde pri startu urcitych procesu). Pouziti: reakce na systemove udalosti a spousteni akci." -ForegroundColor Yellow
+            Log-Action "Created WMI filter 'DetektorOdhalovaniNapadeni' and consumer 'HlidacKlicovychProcesu'"
         }
         10 {
             # Logon Scripts are executed when a user logs into the system
@@ -194,6 +236,9 @@ do {
             $valueData = 'cmd /k echo Spusten logon script'
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType String -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_SZ."
+            Write-Host "Pridano: Logon script registry -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri prihlaseni uzivatele (logon). Pouziti: spousteni skriptu pri prihlaseni." -ForegroundColor Yellow
+            Log-Action "Added LogonScript entry: $valueName -> $valueData"
         }
         11 {
             # AppInit_DLLs are loaded by every process that loads User32.dll
@@ -206,6 +251,9 @@ do {
             Set-ItemProperty -Path $regPath -Name $valueName -Value $valueData -Force | Out-Null
             Set-ItemProperty -Path $regPath -Name "LoadAppInit_DLLs" -Value 1 -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_SZ."
+            Write-Host "Pridano: AppInit_DLLs -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri nacteni User32.dll v procesu (castecne pri spousteni GUI procesu). Pouziti: system-wide DLL injection / per-process persistence." -ForegroundColor Yellow
+            Log-Action "Set AppInit_DLLs: $valueData; LoadAppInit_DLLs=1"
         }
         12 {
             # Screensaver persistence replaces the screensaver executable
@@ -216,6 +264,9 @@ do {
             $valueData = "cmd.exe"
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType String -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_SZ."
+            Write-Host "Pridano: Screensaver nastaveni -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: kdyz se aktivuje screensaver (po urcitem case necinosti). Pouziti: spousteni kodu pri zamceni/bezci screensaver." -ForegroundColor Yellow
+            Log-Action "Set screensaver SCRNSAVE.EXE -> $valueData"
         }
         13 {
             # Office Test persistence leverages a Microsoft Office vulnerability
@@ -226,6 +277,9 @@ do {
             New-Item -Path $regPath -Force | Out-Null
             New-ItemProperty -Path $regPath -Name "(Default)" -Value $valueData -PropertyType String -Force | Out-Null
             Write-Host "Do registru byl pridan klic pro Office Test."
+            Write-Host "Pridano: Office test key -> $regPath (Default) = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri spusteni Office aplikaci, pokud aplikace cte tento klic. Pouziti: test/prototyp persistence spojen s Office startupem." -ForegroundColor Yellow
+            Log-Action "Created Office test registry key -> $regPath = $valueData"
         }
         14 {
             # Winlogon Shell persistence modifies the shell that is executed at logon
@@ -237,6 +291,9 @@ do {
             $valueData = "explorer.exe,cmd.exe"
             Set-ItemProperty -Path $regPath -Name $valueName -Value $valueData -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_SZ."
+            Write-Host "Pridano: Winlogon Shell -> $regPath\\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri prihlaseni uzivatele (prez start explorer.exe). Pouziti: modifikace prihlasovaciho shellu pro spousteni dalsich procesu." -ForegroundColor Yellow
+            Log-Action "Set Winlogon Shell: $valueData"
         }
         99 {
             # Cleanup function to remove all persistence techniques
@@ -248,20 +305,30 @@ do {
             sc.exe stop Demo | Out-Null
             sc.exe delete Demo | Out-Null
 
+            Log-Action "Removed service: Demo (stopped and deleted)"
+
 
             Remove-Item -Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd") -ErrorAction SilentlyContinue
             Remove-Item -Path (Join-Path $env:ALLUSERSPROFILE "Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd") -ErrorAction SilentlyContinue
+
+            Log-Action "Removed startup files from per-user and all-users Startup"
 
 
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue
 
+            Log-Action "Removed Run registry entries (HKCU/HKLM/WOW6432Node) for 'demo'"
+
 
             Unregister-ScheduledTask -TaskName "Demo30MinTask" -Confirm:$false -ErrorAction SilentlyContinue
 
+            Log-Action "Unregistered scheduled task: Demo30MinTask"
+
 
             Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\charmap.exe" -Recurse -Force -ErrorAction SilentlyContinue
+
+            Log-Action "Removed IFEO entry for charmap.exe"
 
 
             $filter = Get-WmiObject -Namespace root\subscription -Class __EventFilter | Where-Object { $_.Name -eq "DetektorOdhalovaniNapadeni" }
@@ -271,6 +338,8 @@ do {
             $bindings = Get-WmiObject -Namespace root\subscription -Class __FilterToConsumerBinding | Where-Object { $_.Filter -like "*DetektorOdhalovaniNapadeni*" -or $_.Consumer -like "*HlidacKlicovychProcesu*" }
             foreach ($b in $bindings) { $b.Delete() }
 
+            Log-Action "Removed WMI filter/consumer/bindings: DetektorOdhalovaniNapadeni / HlidacKlicovychProcesu"
+
 
             Remove-ItemProperty -Path "HKCU:\Environment" -Name "UserInitMprLogonScript" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Windows" -Name "AppInit_DLLs" -ErrorAction SilentlyContinue
@@ -278,6 +347,8 @@ do {
             Remove-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SCRNSAVE.EXE" -ErrorAction SilentlyContinue
             Remove-Item -Path "HKCU:\Software\Microsoft\Office test" -Recurse -Force -ErrorAction SilentlyContinue
             Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "Shell" -Value "explorer.exe" -ErrorAction SilentlyContinue
+
+            Log-Action "Removed AppInit_DLLs, LogonScript, Screensaver, Office test key and reset Winlogon Shell"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
