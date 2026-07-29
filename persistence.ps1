@@ -282,17 +282,26 @@ do {
             Log-Action "Set screensaver SCRNSAVE.EXE -> $valueData"
         }
         13 {
-            # Office Test persistence leverages a Microsoft Office vulnerability
-            # It creates a registry key that Office applications check on startup
+            # Office Test persistence (MITRE ATT&CK T1137.002).
+            # POZOR: Office test klic je DLL LOADER, ne exe launcher!
+            # Office pri startu klasicke aplikace (Word/Excel/PowerPoint/Outlook/...) precte hodnotu (Default)
+            # a pokusi se pres LoadLibrary() nacist DLL z te cesty (typicky ocekava export funkce 'Perf').
+            # Pokud tam dame cmd.exe, LoadLibrary tise selze - proto se nic viditelneho nedeje.
+            # Pro DEMO nastavime cestu k neexistujici DLL - persistence artefakt zustane v registru
+            # a v Process Monitoru / Sysmon uvidis pokus o load (RegQueryValue + CreateFile na DLL cestu).
             Write-Host "Office Test: Zkontrolujte 'HKCU:\Software\Microsoft\Office test\Special\Perf'."
             $regPath = "HKCU:\Software\Microsoft\Office test\Special\Perf"
-            $valueData = "cmd.exe"
+            $valueData = "C:\Windows\Temp\demo_office_test.dll"
             New-Item -Path $regPath -Force | Out-Null
             New-ItemProperty -Path $regPath -Name "(Default)" -Value $valueData -PropertyType String -Force | Out-Null
-            Write-Host "Do registru byl pridan klic pro Office Test."
+            Write-Host "Do registru byl pridan Office test klic (hodnota = cesta k neexistujici DLL, jen pro artefakt)."
             Write-Host "Pridano: Office test key -> $regPath (Default) = $valueData" -ForegroundColor Green
-            Write-Host "Kdy se spousti: pri spusteni Office aplikaci, pokud aplikace cte tento klic. Pouziti: test/prototyp persistence spojen s Office startupem." -ForegroundColor Yellow
-            Log-Action "Created Office test registry key -> $regPath = $valueData"
+            Write-Host "Kdy se spousti: pri startu KLASICKE Office aplikace (Word/Excel/PowerPoint/Outlook/Access/Publisher/Visio/Project)." -ForegroundColor Yellow
+            Write-Host "                Office zavola LoadLibrary(vyse uvedena cesta). Pokud DLL neexistuje - LoadLibrary selze, ale POKUS je viditelny v ProcMon/Sysmon EID 7." -ForegroundColor Yellow
+            Write-Host "                Pokud DLL existuje a ma export 'Perf' - kod DLL se spusti pod uctem uzivatele s Office procesem." -ForegroundColor Yellow
+            Write-Host "NEFUNGUJE u: Office Web, OneNote UWP, Teams, Office Mobile. Novejsi M365 CTR muze mit mitigace." -ForegroundColor Yellow
+            Write-Host "TIP: pokud chces videt live 'projev' - otevri regedit na cestu vyse a pak spust Word. V ProcMon uvidis 'HKCU\...\Office test\Special\Perf' RegQuery a CreateFile na DLL." -ForegroundColor Cyan
+            Log-Action "Created Office test registry key -> $regPath (Default) = $valueData (non-existent DLL for artifact-only demo)"
         }
         14 {
             # Winlogon Shell persistence modifies the shell that is executed at logon
