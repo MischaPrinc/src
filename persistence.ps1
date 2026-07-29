@@ -65,6 +65,7 @@ function Show-Menu {
     Write-Host " 17) PowerShell Profile (CurrentUser)"
     Write-Host " 18) COM Hijacking (HKCU CLSID)"
     Write-Host " 23) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY (aha demo)" -ForegroundColor Magenta
+    Write-Host " 30) File Association Hijack (.demopers -> cmd.exe)"
     Write-Host ""
     Write-Host "--- Systemova uroven (vyzaduje admin) ---" -ForegroundColor Yellow
     Write-Host "  1) Sluzba (Service)"
@@ -80,6 +81,12 @@ function Show-Menu {
     Write-Host " 20) Netsh Helper DLL"
     Write-Host " 21) BITS Job (notify command)"
     Write-Host " 22) Winlogon Userinit"
+    Write-Host " 24) Active Setup (per-user first logon)"
+    Write-Host " 25) AppCertDLLs (system-wide DLL na CreateProcess)"
+    Write-Host " 26) Print Port Monitor (spoolsv DLL)"
+    Write-Host " 27) Time Provider (W32Time DLL)"
+    Write-Host " 28) Security Support Provider (LSA - POZOR)" -ForegroundColor Red
+    Write-Host " 29) Silent Process Exit (notepad close - aha demo 2)" -ForegroundColor Magenta
     Write-Host ""
     Write-Host "--- Ostatni ---" -ForegroundColor Cyan
     Write-Host " 90) Restartovat skript jako Administrator (UAC prompt)" -ForegroundColor Yellow
@@ -502,6 +509,129 @@ do {
                 Log-Action "ERROR creating DemoLockScreenTask: $_"
             }
         }
+        24 {
+            # Active Setup (T1547.014) - HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\{GUID}
+            # Spousti se jednou per uzivatel pri jeho prvnim prihlaseni, kdyz HKCU verze neexistuje nebo je nizsi
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Active Setup: 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components'."
+            $demoGuid = "{FEEDFACE-1234-5678-9ABC-DEF012345678}"
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\$demoGuid"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "(Default)" -Value "Demo Active Setup" -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "StubPath" -Value 'cmd.exe /k echo Active Setup persistence spustena pro %USERNAME% na %COMPUTERNAME%' -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "Version" -Value "1,0,0,0" -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "IsInstalled" -Value 1 -PropertyType DWord -Force | Out-Null
+            Write-Host "Pridano: Active Setup component $demoGuid -> StubPath = cmd.exe" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri PRVNIM prihlaseni kazdeho uzivatele (Windows porovna HKCU\Active Setup verzi s HKLM a spusti StubPath)." -ForegroundColor Yellow
+            Write-Host "Pouziti: system-wide 'first-run per user' - klasicky trick MSI installeru i utocniku (kazdy novy user bude retriggered)." -ForegroundColor Yellow
+            Log-Action "Added Active Setup component: $demoGuid -> StubPath cmd.exe"
+        }
+        25 {
+            # AppCertDLLs (T1546.009) - HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls
+            # Nacita se do KAZDEHO procesu, ktery vola CreateProcess (system-wide DLL injection)
+            if (-not (Require-Administrator)) { break }
+            Write-Host "AppCertDLLs: 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls'."
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "demo" -Value "C:\Windows\Temp\demo_appcert.dll" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: AppCertDLLs -> $regPath\demo = C:\Windows\Temp\demo_appcert.dll (DLL zamerne neexistuje, jen artefakt)" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri kazdem volani CreateProcess (system-wide, drive nez proces zacne bezet)." -ForegroundColor Yellow
+            Write-Host "Pouziti: sourozenec AppInit_DLLs, ale jinym loader mechanism - obcas obchazi mitigace pro AppInit." -ForegroundColor Yellow
+            Log-Action "Added AppCertDLLs entry: demo -> C:\Windows\Temp\demo_appcert.dll"
+        }
+        26 {
+            # Port Monitor (T1547.010) - HKLM\SYSTEM\CurrentControlSet\Control\Print\Monitors\<name>\Driver
+            # DLL nacitana spoolsv.exe (SYSTEM) pri startu Print Spooler sluzby
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Print Port Monitor: 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors'."
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\DemoMonitor"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "Driver" -Value "demo_printmon.dll" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: Print Monitor 'DemoMonitor' -> Driver = demo_printmon.dll (DLL zamerne neexistuje)" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri startu Print Spooler sluzby (spoolsv.exe pod SYSTEM) - typicky pri bootu." -ForegroundColor Yellow
+            Write-Host "Pouziti: SYSTEM-level persistence pres Print Spooler - dokumentovana v APT reportech (FIN7, APT34, Turla)." -ForegroundColor Yellow
+            Log-Action "Added Port Monitor: DemoMonitor -> demo_printmon.dll"
+        }
+        27 {
+            # Time Provider (T1547.003) - HKLM\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders
+            # DLL nacitana W32Time sluzbou (svchost.exe pod LOCAL SERVICE)
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Time Provider: 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders'."
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\DemoProvider"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "DllName" -Value "C:\Windows\Temp\demo_timeprov.dll" -PropertyType ExpandString -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "Enabled" -Value 1 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "InputProvider" -Value 1 -PropertyType DWord -Force | Out-Null
+            Write-Host "Pridano: Time Provider 'DemoProvider' -> DllName = demo_timeprov.dll (DLL zamerne neexistuje)" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri startu Windows Time sluzby (W32Time) - typicky pri bootu." -ForegroundColor Yellow
+            Write-Host "Pouziti: perzistence pres casovou synchronizaci - malokdo tuto sekci registru kontroluje." -ForegroundColor Yellow
+            Log-Action "Added Time Provider: DemoProvider -> demo_timeprov.dll"
+        }
+        28 {
+            # Security Support Provider (SSP) - HKLM\SYSTEM\CurrentControlSet\Control\Lsa\Security Packages
+            # POZOR: uprava LSA konfigurace muze mit dopad na autentizaci. Skript pouze APPENDNE neexistujici nazev.
+            # LSA se ho pokusi nacist, zaloguje chybu do System logu a pokracuje - nebootovaci system to nezpusobi.
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Security Support Provider (SSP): 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'."
+            Write-Host "POZOR: Uprava SSP kluce se dotyka LSA. Pridavame neexistujici nazev - LSA ho preskoci a jen zaloguje warning." -ForegroundColor Red
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+            try {
+                $current = (Get-ItemProperty -Path $regPath -Name "Security Packages" -ErrorAction SilentlyContinue)."Security Packages"
+                if (-not $current) { $current = @() }
+                if ($current -notcontains "demo_ssp") {
+                    $new = @($current) + "demo_ssp"
+                    Set-ItemProperty -Path $regPath -Name "Security Packages" -Value $new -Force | Out-Null
+                }
+                Write-Host "Pridano: 'demo_ssp' do MULTI_SZ hodnoty 'Security Packages'." -ForegroundColor Green
+                Write-Host "Kdy se spousti: pri startu systemu - LSASS se pokusi nacist demo_ssp.dll (neexistuje -> log warning)." -ForegroundColor Yellow
+                Write-Host "Pouziti: SYSTEM-level persistence s pristupem k LSASS pameti - potencialne credential dump (Mimikatz-style memssp)." -ForegroundColor Yellow
+                Write-Host "Detekce: Event ID 6155 v System logu, nebo primo hodnota Security Packages v registru." -ForegroundColor Yellow
+                Log-Action "Appended 'demo_ssp' to LSA Security Packages"
+            } catch {
+                Write-Host "Chyba pri uprave SSP: $_" -ForegroundColor Red
+                Log-Action "ERROR modifying SSP: $_"
+            }
+        }
+        29 {
+            # Silent Process Exit (SPE) - HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\<exe>
+            # Spusti prikaz kdyz cilovy proces UKONCI (opak IFEO Debugger - ten spousti pri STARTU).
+            # AHA DEMO 2: otevrete notepad, zavrete ho - vyskoci cmd.exe.
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Silent Process Exit (SPE) - trigger PRI UKONCENI procesu (opak IFEO Debugger)." -ForegroundColor Magenta
+            $target = "notepad.exe"
+            $ifeoPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\$target"
+            $spePath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\$target"
+            if (-not (Test-Path $ifeoPath)) { New-Item -Path $ifeoPath -Force | Out-Null }
+            if (-not (Test-Path $spePath)) { New-Item -Path $spePath -Force | Out-Null }
+            New-ItemProperty -Path $ifeoPath -Name "GlobalFlag" -Value 0x200 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $spePath -Name "ReportingMode" -Value 1 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $spePath -Name "MonitorProcess" -Value 'cmd.exe /k echo Silent Process Exit spustena po zavreni notepadu na %COMPUTERNAME%' -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: SPE hook pro '$target' -> pri jeho ukonceni se spusti cmd.exe." -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri UKONCENI cilovyho procesu (notepad.exe)." -ForegroundColor Yellow
+            Write-Host "Pouziti: netradicni trigger - reakce na ZAVRENI programu, ne jeho spusteni." -ForegroundColor Yellow
+            Write-Host "TIP pro skolitele: otevrete notepad.exe, zavrete ho krizkem - okamzite vyskoci cmd.exe. Perfektni 'aha' okamzik!" -ForegroundColor Magenta
+            Log-Action "Added Silent Process Exit hook for notepad.exe -> cmd.exe"
+        }
+        30 {
+            # File Association Hijack (T1546.001) - HKCU\Software\Classes
+            # V DEMU vytvarime NOVOU priponu .demopers (nehijackujeme existujici .txt/.pdf, aby to bylo bezpecne).
+            # Realny utok by nahradil handler existujici pripony.
+            Write-Host "File Association Hijack: HKCU:\Software\Classes (per-user, bez admin)."
+            $extPath = "HKCU:\Software\Classes\.demopers"
+            $progIdPath = "HKCU:\Software\Classes\demopers.file\shell\open\command"
+            if (-not (Test-Path $extPath)) { New-Item -Path $extPath -Force | Out-Null }
+            New-ItemProperty -Path $extPath -Name "(Default)" -Value "demopers.file" -PropertyType String -Force | Out-Null
+            if (-not (Test-Path $progIdPath)) { New-Item -Path $progIdPath -Force | Out-Null }
+            New-ItemProperty -Path $progIdPath -Name "(Default)" -Value 'cmd.exe /k echo File association handler spustena! Argument: "%1"' -PropertyType String -Force | Out-Null
+            $testFile = Join-Path $env:TEMP "test.demopers"
+            "Testovaci soubor pro demonstraci File Association Hijack (Hack3r.cz workshop)." | Set-Content -Path $testFile -Encoding UTF8
+            Write-Host "Pridano: .demopers -> demopers.file\shell\open\command = cmd.exe" -ForegroundColor Green
+            Write-Host "Vytvoreno: testovaci soubor $testFile" -ForegroundColor Green
+            Write-Host "Kdy se spousti: kdyz uzivatel otevre soubor s priponou .demopers (dvojklik v Exploreru)." -ForegroundColor Yellow
+            Write-Host "Pouziti: v realu se hijackuje EXISTUJICI handler (napr. .txt, .pdf, .rdp) - my zde vytvarime novou priponu, aby to bylo bezpecne pro lab." -ForegroundColor Yellow
+            Write-Host "TIP: otevrete '$testFile' dvojklikem v Exploreru - spusti se cmd.exe s cestou k souboru jako argument." -ForegroundColor Cyan
+            Log-Action "Added file association hijack for .demopers -> cmd.exe; test file: $testFile"
+        }
         0 {
             Write-Host "Ukoncuji skript." -ForegroundColor Cyan
             exit
@@ -595,7 +725,7 @@ do {
 
             Log-Action "Removed AppInit_DLLs, LogonScript, Screensaver, Office test key and reset Winlogon Shell"
 
-            # --- Cleanup novych technik (15-23) ---
+            # --- Cleanup rozsirenych technik (15-23) ---
 
             # 15/16 RunOnce (HKCU / HKLM)
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "demoOnce" -ErrorAction SilentlyContinue
@@ -647,6 +777,58 @@ do {
             # 23 Scheduled Task s SESSION_LOCK triggerem
             Unregister-ScheduledTask -TaskName "DemoLockScreenTask" -Confirm:$false -ErrorAction SilentlyContinue
             Log-Action "Unregistered scheduled task: DemoLockScreenTask"
+
+            # --- Cleanup rozsirenych technik (24-30) ---
+
+            # 24 Active Setup
+            Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{FEEDFACE-1234-5678-9ABC-DEF012345678}" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Active Setup component {FEEDFACE-...}"
+
+            # 25 AppCertDLLs
+            Remove-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls" -Name "demo" -ErrorAction SilentlyContinue
+            Log-Action "Removed AppCertDlls entry 'demo'"
+
+            # 26 Print Port Monitor
+            Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\DemoMonitor" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Port Monitor DemoMonitor"
+
+            # 27 Time Provider
+            Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\DemoProvider" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Time Provider DemoProvider"
+
+            # 28 SSP - odstranime demo_ssp z MULTI_SZ
+            try {
+                $lsaPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+                $current = (Get-ItemProperty -Path $lsaPath -Name "Security Packages" -ErrorAction SilentlyContinue)."Security Packages"
+                if ($current -contains "demo_ssp") {
+                    $new = @($current | Where-Object { $_ -ne "demo_ssp" })
+                    Set-ItemProperty -Path $lsaPath -Name "Security Packages" -Value $new -Force | Out-Null
+                }
+                Log-Action "Removed 'demo_ssp' from LSA Security Packages"
+            } catch {
+                Log-Action "ERROR cleaning SSP: $_"
+            }
+
+            # 29 Silent Process Exit - odstranime SPE klic notepadu a GlobalFlag z IFEO notepadu
+            Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\notepad.exe" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\notepad.exe" -Name "GlobalFlag" -ErrorAction SilentlyContinue
+            # Pokud je IFEO klic notepadu prazdny, smazeme cely klic
+            try {
+                $ifeoNotepad = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\notepad.exe"
+                if (Test-Path $ifeoNotepad) {
+                    $item = Get-Item $ifeoNotepad
+                    if ($item.Property.Count -eq 0 -and $item.SubKeyCount -eq 0) {
+                        Remove-Item -Path $ifeoNotepad -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            } catch {}
+            Log-Action "Removed Silent Process Exit hook for notepad.exe"
+
+            # 30 File Association Hijack - .demopers
+            Remove-Item -Path "HKCU:\Software\Classes\.demopers" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "HKCU:\Software\Classes\demopers.file" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path (Join-Path $env:TEMP "test.demopers") -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed .demopers file association and test file"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
