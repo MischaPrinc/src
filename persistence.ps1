@@ -230,7 +230,7 @@ do {
             $Filter = Set-WmiInstance -Namespace root\subscription -Class __EventFilter -Arguments @{
                 EventNamespace = 'root/cimv2'
                 Name = "DetektorOdhalovaniNapadeni"
-                Query = "select * from win32_processstarttrace where processname = 'procexp.exe' or processname = 'procexp64.exe' or processname = 'charmap.exe' or processname = 'tasksmgr.exe'"
+                Query = "select * from win32_processstarttrace where processname = 'procexp.exe' or processname = 'procexp64.exe' or processname = 'charmap.exe' or processname = 'taskmgr.exe'"
                 QueryLanguage = 'WQL'
             }
             $Command = "cmd /k echo Prave jsme detekovali zmenu a spoustime: extrakci dat/sifrovani/skryvani - ukoncovani aktivnich procesu atd. ..."
@@ -242,9 +242,15 @@ do {
                 Filter = $Filter
                 Consumer = $Consumer
             } | Out-Null
-            Write-Host "WMI filtr, consumer a propojeni byly vytvoreny."
+            Write-Host "WMI filtr, consumer a propojeni byly vytvoreny." -ForegroundColor Green
             Write-Host "Pridano: WMI EventFilter 'DetektorOdhalovaniNapadeni' a CommandLineEventConsumer 'HlidacKlicovychProcesu'" -ForegroundColor Green
-            Write-Host "Kdy se spousti: pri udalostech definovanych ve filtru (zde pri startu urcitych procesu). Pouziti: reakce na systemove udalosti a spousteni akci." -ForegroundColor Yellow
+            Write-Host "Kdy se spousti: OKAMZITE po vytvoreni bindingu (neni potreba reboot ani logon)." -ForegroundColor Yellow
+            Write-Host "  - Filtr sleduje Win32_ProcessStartTrace pro cilove procesy: procexp.exe, procexp64.exe, charmap.exe, taskmgr.exe." -ForegroundColor Yellow
+            Write-Host "  - Kdykoli KDOKOLI (i uzivatel bez admin prav) spusti jeden z tech procesu, WMI zavola consumer." -ForegroundColor Yellow
+            Write-Host "  - Consumer bezi pod SYSTEM (WMI provider host), takze vysledny cmd.exe ma SYSTEM prava." -ForegroundColor Yellow
+            Write-Host "  - Persistence prezije reboot (ulozeno v repozitari WMI: %WINDIR%\System32\wbem\Repository)." -ForegroundColor Yellow
+            Write-Host "TEST: spustte 'charmap.exe' nebo 'taskmgr.exe' - objevi se okno cmd.exe s hlaskou." -ForegroundColor Cyan
+            Write-Host "Pouziti: detekce spusteni forensnich/monitorovacich nastroju utocnikem + trigger obranne (nebo utocne) reakce." -ForegroundColor Yellow
             Log-Action "Created WMI filter 'DetektorOdhalovaniNapadeni' and consumer 'HlidacKlicovychProcesu'"
         }
         10 {
